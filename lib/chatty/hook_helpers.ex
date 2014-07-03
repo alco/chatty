@@ -1,7 +1,7 @@
 defmodule Chatty.HookHelpers do
   @moduledoc false
 
-  import Chatty.Logger
+  import Chatty.Logger, warn: false
   import Chatty.IRCHelpers, only: [irc_cmd: 3]
 
   require Record
@@ -34,7 +34,7 @@ defmodule Chatty.HookHelpers do
     tokens = tokenize(msg)
     Enum.reduce(hooks, 0, fn
       {_, hookrec(type: type, direct: direct, exclusive: ex, fn: f, chan: hook_chan)}, successes ->
-	      log "testing hook: #{inspect f}"
+				#log "testing hook: #{inspect f}"
         if hook_chan == nil or "\#"<>hook_chan == chan do
           if ((not direct) || (receiver == info.nickname)) && ((not ex) || (successes == 0)) do
             arg = case type do
@@ -42,14 +42,14 @@ defmodule Chatty.HookHelpers do
               :token -> tokens
             end
 
-            log "applying hook: #{inspect f}"
+            #log "applying hook: #{inspect f}"
             if resolve_hook_result(f.(sender, arg), chan, info, sock) do
               successes+1
             else
               successes
             end
           else
-            log "skipping hook: #{inspect f}"
+            #log "skipping hook: #{inspect f}"
             successes
           end
         else

@@ -39,7 +39,7 @@ defmodule Chatty.IRCHelpers do
         [chan, msg] = args
         {:privmsg, chan, sender, msg}
       '332' ->
-        [chan, topic] = args
+        [_, chan, topic] = args
         {:topic, chan, topic}
       'PING' ->
         :ping

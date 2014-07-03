@@ -35,18 +35,16 @@ each incoming message. A ping hook is included as an example, try out like
 this:
 
 ```iex
-iex -S mix
-
 iex> Chatty.add_hook :ping, &Chatty.Hooks.PingHook.run/2, in: :text, direct: true
 :ok
 ```
 
-Now, whenever Chatty sees the message `<nickname>: ping`, it will send one of
-predefined replies back to the sender:
+Now, whenever Chatty sees the message `<nickname>: ping`, it will send a reply
+from the set of predefined ones back to the sender:
 
 ```
 02:05:35      @true_droid | beamie_test: ping
-02:05:35      beamie_test | true_droid: spank
+02:05:35      beamie_test | true_droid: pong
 ```
 
 

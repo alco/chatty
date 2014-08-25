@@ -16,8 +16,8 @@ defmodule Chatty.ConnServer do
   end
 
   def start_link(module, args, options \\ []) do
-    host = Keyword.get(options, :host, "irc.freenode.net") |> String.to_char_list
-    port = Keyword.get(options, :port, 6667)
+    host = Keyword.fetch!(options, :host) |> String.to_char_list
+    port = Keyword.fetch!(options, :port)
     info = %UserInfo{
       host: host,
       port: port,

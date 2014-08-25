@@ -26,6 +26,9 @@ defmodule Chatty do
     * `exclusive: <boolean>` - if `true`, the hook will be triggered only if no
       other hook before it has reported successful processing of the message.
 
+    * `channel: <string>` - the hook will only be active on the specified
+      channel
+
   ## Hook results
 
   A hook function may return one of the following values:

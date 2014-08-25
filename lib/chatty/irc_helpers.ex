@@ -48,13 +48,13 @@ defmodule Chatty.IRCHelpers do
   end
 
   defp parse_msg(":" <> rest) do
-    {prefix, rest} = parse_until(rest, ? )
+    {prefix, rest} = parse_until(rest, ?\s)
     {nil, cmd, args} = parse_msg(rest)
     {prefix, cmd, args}
   end
 
   defp parse_msg(msg) do
-    {cmd, argstr} = parse_until(msg, ? )
+    {cmd, argstr} = parse_until(msg, ?\s)
     {nil, cmd, parse_args(argstr)}
   end
 

@@ -4,7 +4,7 @@ defmodule Chatty.Mixfile do
   def project do
     [
       app: :chatty,
-      version: "0.0.1",
+      version: "0.1.0",
       elixir: ">= 0.14.1 and < 2.0.0",
     ]
   end

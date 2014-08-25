@@ -31,7 +31,6 @@ defmodule Chatty.HookHelpers do
   def process_hooks({chan, sender, msg}, hooks, info, sock) do
     receiver = get_message_receiver(msg)
 
-    tokens = tokenize(msg)
     Enum.reduce(hooks, 0, fn
       {_, hookrec(type: type, direct: direct, exclusive: ex, fn: f, chan: hook_chan)}, successes ->
 				#log "testing hook: #{inspect f}"
@@ -39,7 +38,7 @@ defmodule Chatty.HookHelpers do
           if ((not direct) || (receiver == info.nickname)) && ((not ex) || (successes == 0)) do
             arg = case type do
               :text  -> if direct do strip_msg_receiver(msg, receiver) else msg end
-              :token -> tokens
+              :token -> tokenize(msg)
             end
 
             #log "applying hook: #{inspect f}"

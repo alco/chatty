@@ -21,7 +21,7 @@ end
 
 ## Usage
 
-You need to set the following environment paramters for the `:chatty` app:
+You need to set the following environment parameters for the `:chatty` app:
 
   * `:nickname` – the nick to use when connecting and identifying with NickServ
   * `:channels` – a list of channel names to join upon connect
@@ -31,8 +31,8 @@ You need to set the following environment paramters for the `:chatty` app:
     output; off by default
 
 Chatty's behaviour is customized by means of adding hooks that get invoked on
-each incoming message. A ping hook is included as an example, try out like
-this:
+each incoming message. A ping hook is included as an example. Set it up as
+follows:
 
 ```iex
 iex> Chatty.add_hook :ping, &Chatty.Hooks.PingHook.run/2, in: :text, direct: true

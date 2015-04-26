@@ -124,19 +124,15 @@ defmodule Chatty.HookHelpers do
     {:public, chan}
   end
 
-  defp response_prefix(:reply, {:public, chan}, sender) do
-    "#{chan} :#{sender}: "
+  defp response_prefix(:msg, {_, chan}) do
+    "#{chan} :"
   end
 
   defp response_prefix(:reply, {:private, sender}, sender) do
     "#{sender} :"
   end
 
-  defp response_prefix(:reply, {:private, chan}, sender) do
+  defp response_prefix(:reply, {_, chan}, sender) do
     "#{chan} :#{sender}: "
-  end
-
-  defp response_prefix(:msg, {_, chan}) do
-    "#{chan} :"
   end
 end

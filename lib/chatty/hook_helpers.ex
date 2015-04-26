@@ -6,19 +6,21 @@ defmodule Chatty.HookHelpers do
 
   require Record
   Record.defrecordp :hookrec, [
-    type: nil, direct: false, exclusive: false, fn: nil, chan: nil
+    type: :text, direct: false, exclusive: false, fn: nil, chan: nil, public_only: true
   ]
 
   def add_hook(hooks, id, f, opts) do
     hook = Enum.reduce(opts, hookrec(fn: f), fn
       {:in, type}, rec ->
         hookrec(rec, type: type)
+      {:channel, chan}, rec ->
+        hookrec(rec, chan: chan)
       {:direct, flag}, rec ->
         hookrec(rec, direct: flag)
       {:exclusive, flag}, rec ->
         hookrec(rec, exclusive: flag)
-      {:channel, chan}, rec ->
-        hookrec(rec, chan: chan)
+      {:public_only, flag}, rec ->
+        hookrec(rec, public_only: flag)
     end)
     hooks ++ [{id, hook}]
   end
@@ -32,7 +34,8 @@ defmodule Chatty.HookHelpers do
     receiver = get_message_receiver(msg)
 
     Enum.reduce(hooks, 0, fn
-      {_, hookrec(type: type, direct: direct, exclusive: ex, fn: f, chan: hook_chan)}, successes ->
+      {_, hookrec(type: type, direct: direct, exclusive: ex, fn: f, chan: hook_chan)=rec},
+      successes ->
 				#log "testing hook: #{inspect f}"
         if hook_chan == nil or "\#"<>hook_chan == chan do
           if ((not direct) || (receiver == info.nickname)) && ((not ex) || (successes == 0)) do
@@ -42,7 +45,13 @@ defmodule Chatty.HookHelpers do
             end
 
             #log "applying hook: #{inspect f}"
-            if resolve_hook_result(f.(sender, arg), chan, info, sock) do
+            public_only = hookrec(rec, :public_only)
+            response_chan =
+              case {resolve_response_channel(chan, info.nickname, sender), public_only} do
+                {{:private, _}, true} -> nil
+                {chan, _} -> chan
+              end
+            if response_chan && resolve_hook_result(f.(sender, arg), response_chan, sender, sock) do
               successes+1
             else
               successes
@@ -75,30 +84,59 @@ defmodule Chatty.HookHelpers do
     |> String.strip()
   end
 
-  defp resolve_hook_result(nil, _chan, _info, _sock) do
+  defp resolve_hook_result(nil, _chan, _sender, _sock) do
     nil
   end
 
-  defp resolve_hook_result({:reply, text}, chan, info, sock) do
-    irc_cmd(sock, "PRIVMSG", "#{chan} #{info.nickname}: :#{text}")
+  # Reply to the person that we received the message from
+  defp resolve_hook_result({:reply, text}, chan, sender, sock) do
+    irc_cmd(sock, "PRIVMSG", [response_prefix(:reply, chan, sender), text])
   end
 
-  defp resolve_hook_result({:reply, to, text}, chan, _info, sock) do
-    irc_cmd(sock, "PRIVMSG", "#{chan} :#{to}: #{text}")
+  # Reply to the indicated person
+  defp resolve_hook_result({:reply, to, text}, chan, _sender, sock) do
+    irc_cmd(sock, "PRIVMSG", [response_prefix(:reply, chan, to), text])
   end
 
-  defp resolve_hook_result({:msg, text}, chan, _info, sock) do
-    irc_cmd(sock, "PRIVMSG", "#{chan} :#{text}")
+  # Just send a message to the channel
+  defp resolve_hook_result({:msg, text}, chan, _sender, sock) do
+    irc_cmd(sock, "PRIVMSG", [response_prefix(:msg, chan), text])
   end
 
-  defp resolve_hook_result({:notice, text}, chan, _info, sock) do
-    irc_cmd(sock, "NOTICE", "#{chan} :#{text}")
+  # Send a notice to the channel
+  defp resolve_hook_result({:notice, text}, chan, _sender, sock) do
+    irc_cmd(sock, "NOTICE", [response_prefix(:msg, chan), text])
   end
 
-  defp resolve_hook_result(messages, chan, info, sock) when is_list(messages) do
+  defp resolve_hook_result(messages, chan, sender, sock) when is_list(messages) do
     Enum.reduce(messages, nil, fn msg, status ->
-      new_status = resolve_hook_result(msg, chan, info, sock)
+      new_status = resolve_hook_result(msg, chan, sender, sock)
       status || new_status
     end)
+  end
+
+  # This is a private message, use the sender's name as the channel for the response
+  defp resolve_response_channel(nickname, nickname, sender) do
+    {:private, sender}
+  end
+
+  defp resolve_response_channel(chan, _, _) do
+    {:public, chan}
+  end
+
+  defp response_prefix(:reply, {:public, chan}, sender) do
+    "#{chan} :#{sender}: "
+  end
+
+  defp response_prefix(:reply, {:private, sender}, sender) do
+    "#{sender} :"
+  end
+
+  defp response_prefix(:reply, {:private, chan}, sender) do
+    "#{chan} :#{sender}: "
+  end
+
+  defp response_prefix(:msg, {_, chan}) do
+    "#{chan} :"
   end
 end

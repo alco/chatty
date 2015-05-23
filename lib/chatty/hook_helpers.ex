@@ -135,7 +135,12 @@ defmodule Chatty.HookHelpers do
   defp split_text({:notice, text}),
     do: {:notice, split_lines(text)}
 
-  defp split_lines(text), do: String.split(text, "\n")
+  defp split_lines(text) do
+    text
+    |> String.rstrip
+    |> String.split("\n")
+    |> Enum.drop_while(&String.strip(&1) == "")
+  end
 
   defp send_lines(msg_type, lines, sock, chan) do
     Enum.each(lines, &irc_cmd(sock, msg_type, [response_prefix(:msg, chan), &1]))

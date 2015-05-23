@@ -88,31 +88,57 @@ defmodule Chatty.HookHelpers do
     nil
   end
 
+  defp resolve_hook_result(messages, chan, sender, sock) when is_list(messages) do
+    Enum.reduce(messages, nil, fn msg, status ->
+      new_status = do_resolve_hook_result(split_text(msg), chan, sender, sock)
+      status || new_status
+    end)
+  end
+
+  defp resolve_hook_result(message, chan, sender, sock) do
+    do_resolve_hook_result(split_text(message), chan, sender, sock)
+  end
+
   # Reply to the person that we received the message from
-  defp resolve_hook_result({:reply, text}, chan, sender, sock) do
-    irc_cmd(sock, "PRIVMSG", [response_prefix(:reply, chan, sender), text])
+  defp do_resolve_hook_result({:reply, lines}, chan, sender, sock) do
+    {first_line, rest_lines} = Enum.split(lines, 1)
+    irc_cmd(sock, "PRIVMSG", [response_prefix(:reply, chan, sender), first_line])
+    send_lines("PRIVMSG", rest_lines, sock, chan)
   end
 
   # Reply to the indicated person
-  defp resolve_hook_result({:reply, to, text}, chan, _sender, sock) do
-    irc_cmd(sock, "PRIVMSG", [response_prefix(:reply, chan, to), text])
+  defp do_resolve_hook_result({:reply, to, lines}, chan, _sender, sock) do
+    {first_line, rest_lines} = Enum.split(lines, 1)
+    irc_cmd(sock, "PRIVMSG", [response_prefix(:reply, chan, to), first_line])
+    send_lines("PRIVMSG", rest_lines, sock, chan)
   end
 
   # Just send a message to the channel
-  defp resolve_hook_result({:msg, text}, chan, _sender, sock) do
-    irc_cmd(sock, "PRIVMSG", [response_prefix(:msg, chan), text])
+  defp do_resolve_hook_result({:msg, lines}, chan, _sender, sock) do
+    send_lines("PRIVMSG", lines, sock, chan)
   end
 
   # Send a notice to the channel
-  defp resolve_hook_result({:notice, text}, chan, _sender, sock) do
-    irc_cmd(sock, "NOTICE", [response_prefix(:msg, chan), text])
+  defp do_resolve_hook_result({:notice, lines}, chan, _sender, sock) do
+    send_lines("NOTICE", lines, sock, chan)
   end
 
-  defp resolve_hook_result(messages, chan, sender, sock) when is_list(messages) do
-    Enum.reduce(messages, nil, fn msg, status ->
-      new_status = resolve_hook_result(msg, chan, sender, sock)
-      status || new_status
-    end)
+  defp split_text({:reply, text}),
+    do: {:reply, split_lines(text)}
+
+  defp split_text({:reply, to, text}),
+    do: {:reply, to, split_lines(text)}
+
+  defp split_text({:msg, text}),
+    do: {:msg, split_lines(text)}
+
+  defp split_text({:notice, text}),
+    do: {:notice, split_lines(text)}
+
+  defp split_lines(text), do: String.split(text, "\n")
+
+  defp send_lines(msg_type, lines, sock, chan) do
+    Enum.each(lines, &irc_cmd(sock, msg_type, [response_prefix(:msg, chan), &1]))
   end
 
   # This is a private message, use the sender's name as the channel for the response

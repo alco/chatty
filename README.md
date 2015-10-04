@@ -27,8 +27,6 @@ You need to set the following environment parameters for the `:chatty` app:
   * `:channels` – a list of channel names to join upon connect
   * `:password` (optional) – when set, Chatty will identify with NickServ using
     this password
-  * `:logging_enabled` (optional) – whether to print connection info to the
-    output; off by default
 
 Chatty's behaviour is customized by means of adding hooks that get invoked on
 each incoming message. A ping hook is included as an example. Set it up as

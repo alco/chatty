@@ -1,7 +1,7 @@
 defmodule Chatty.ConnServer do
   @moduledoc false
 
-  import Chatty.Logger
+  require Logger
   import Chatty.IRCHelpers
 
   alias Chatty.ConnServer.State
@@ -89,14 +89,14 @@ defmodule Chatty.ConnServer do
         handshake(sock, server_state, user_state)
 
       other ->
-        log "Failed to connect: #{inspect other}"
+        Logger.warn("Failed to connect: #{inspect other}")
         nattempts = Process.get(:connect_attempts, 0)
         if nattempts >= @maxattempts do
-          log "FAILED TO CONNECT #{@maxattempts} TIMES IN A ROW. SHUTTING DOWN"
+          Logger.error("FAILED TO CONNECT #{@maxattempts} TIMES IN A ROW. SHUTTING DOWN")
           :erlang.halt()
         else
           Process.put(:connect_attempts, nattempts+1)
-          log "RETRYING IN #{@sleep_sec} SECONDS"
+          Logger.warn("RETRYING IN #{@sleep_sec} SECONDS")
           sleep_sec(@sleep_sec)
           connect(server_state, user_state)
         end
@@ -146,7 +146,7 @@ defmodule Chatty.ConnServer do
 
       {:tcp, ^sock, msg} ->
         msg = IO.iodata_to_binary(msg) |> String.strip
-        log msg
+        Logger.info(msg)
 
         case translate_msg(msg) do
           nil   -> nil
@@ -157,16 +157,16 @@ defmodule Chatty.ConnServer do
             try do
               HookHelpers.process_hooks({chan, sender, msg}, hooks, info, sock)
             rescue
-              x -> log inspect(x)
+              x -> Logger.info(inspect(x))
             end
         end
 
       {:tcp_closed, ^sock} ->
-        log "SOCKET CLOSE; RETRYING CONNECT IN #{@sleep_sec} SECONDS"
+        Logger.warn("SOCKET CLOSE; RETRYING CONNECT IN #{@sleep_sec} SECONDS")
         retry = true
 
       {:tcp_error, ^sock, reason} ->
-        log "SOCKET ERROR: #{inspect reason}\nRETRYING CONNECT IN #{@sleep_sec} SECONDS"
+        Logger.warn("SOCKET ERROR: #{inspect reason}\nRETRYING CONNECT IN #{@sleep_sec} SECONDS")
         retry = true
 
       other ->
@@ -175,7 +175,7 @@ defmodule Chatty.ConnServer do
         end
 
       after @ping_sec * 1000 ->
-        log "No ping message in #{@ping_sec} seconds. Retrying connect."
+        Logger.info("No ping message in #{@ping_sec} seconds. Retrying connect.")
         :gen_tcp.close(sock)
         retry = true
     end

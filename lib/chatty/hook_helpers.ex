@@ -1,7 +1,7 @@
 defmodule Chatty.HookHelpers do
   @moduledoc false
 
-  import Chatty.Logger, warn: false
+  require Logger
   import Chatty.IRCHelpers, only: [irc_cmd: 3]
 
   require Record

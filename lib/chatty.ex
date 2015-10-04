@@ -1,5 +1,13 @@
 defmodule Chatty do
+  use Application
+
   alias Chatty.ConnServer
+
+  def start(_type, _args) do
+    Chatty.Supervisor.start_link
+  end
+
+  ###
 
   @doc """
   Add a hook on the currently open connection.

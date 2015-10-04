@@ -107,7 +107,7 @@ defmodule Chatty.ConnServer do
 
 
   defp handshake(sock, server_state, user_state={_, _, info=%UserInfo{nickname: nick}}) do
-    :random.seed(:erlang.now())
+    :random.seed(:erlang.monotonic_time)
 
     sock
     |> irc_cmd("PASS", "*")

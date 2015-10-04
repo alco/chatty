@@ -4,8 +4,8 @@ defmodule Chatty.Connection do
   require Logger
   import Chatty.IRCHelpers
 
-  alias Chatty.ConnServer.State
-  alias Chatty.ConnServer.UserInfo
+  alias Chatty.Connection.State
+  alias Chatty.Connection.UserInfo
   alias Chatty.HookHelpers
 
   defp get_non_nil(keyword, key) do

@@ -1,4 +1,4 @@
-defmodule Chatty.ConnServer do
+defmodule Chatty.Connection do
   @moduledoc false
 
   require Logger
@@ -15,7 +15,7 @@ defmodule Chatty.ConnServer do
     end
   end
 
-  def start_link(module, args, options \\ []) do
+  def start_link(options \\ []) do
     host = Keyword.fetch!(options, :host) |> String.to_char_list
     port = Keyword.fetch!(options, :port)
     info = %UserInfo{
@@ -29,14 +29,9 @@ defmodule Chatty.ConnServer do
     parent = self()
     ref = make_ref()
     server_pid = spawn_link(fn ->
-      {status, state} = case module.init(args) do
-        {:ok, state} -> {:ok, state}
-        other -> {{:error, other}, nil}
-      end
+      {status, state} = {:ok, nil}
       send(parent, {ref, status})
-      if status == :ok do
-        connect(%State{}, {module, state, info})
-      end
+      connect(%State{}, {nil, state, info})
     end)
     receive do
       {^ref, :ok} -> :ok
@@ -132,17 +127,17 @@ defmodule Chatty.ConnServer do
       {__MODULE__, :internal, {:send_message, chan, msg}} ->
         irc_cmd(sock, "PRIVMSG", "#{chan} :#{msg}")
 
-      {__MODULE__, :call, {caller_pid, ref}=from, msg} ->
-        state = case module.handle_call(msg, from, state) do
-          {:reply, reply, new_state} ->
-            send(caller_pid, {:reply, ref, reply})
-            new_state
-        end
+      #{__MODULE__, :call, {caller_pid, ref}=from, msg} ->
+        #state = case module.handle_call(msg, from, state) do
+          #{:reply, reply, new_state} ->
+            #send(caller_pid, {:reply, ref, reply})
+            #new_state
+        #end
 
-      {__MODULE__, :cast, msg} ->
-        state = case module.handle_cast(msg, state) do
-          {:noreply, new_state} -> new_state
-        end
+      #{__MODULE__, :cast, msg} ->
+        #state = case module.handle_cast(msg, state) do
+          #{:noreply, new_state} -> new_state
+        #end
 
       {:tcp, ^sock, msg} ->
         msg = IO.iodata_to_binary(msg) |> String.strip
@@ -170,9 +165,10 @@ defmodule Chatty.ConnServer do
         retry = true
 
       other ->
-        state = case module.handle_info(other) do
-          {:noreply, new_state} -> new_state
-        end
+        raise "Got unexpected message: #{inspect other}"
+        #state = case module.handle_info(other) do
+          #{:noreply, new_state} -> new_state
+        #end
 
       after @ping_sec * 1000 ->
         Logger.info("No ping message in #{@ping_sec} seconds. Retrying connect.")

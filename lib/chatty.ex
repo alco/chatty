@@ -37,6 +37,8 @@ defmodule Chatty do
 
     * `{:notice, <string>}` - send a notice to the channel where it was received
 
+    * `{:reply, <string>}` - send a message addressed to the original sender
+
     * `{:reply, <receiver>, <string>}` - send a message addressed to
       `<receiver>` on the channel
 

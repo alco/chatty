@@ -9,27 +9,6 @@ defmodule Chatty.HookHelpers do
     type: :text, direct: false, exclusive: false, fn: nil, chan: nil, public_only: true
   ]
 
-  def add_hook(hooks, id, f, opts) do
-    hook = Enum.reduce(opts, hookrec(fn: f), fn
-      {:in, type}, rec ->
-        hookrec(rec, type: type)
-      {:channel, chan}, rec ->
-        hookrec(rec, chan: chan)
-      {:direct, flag}, rec ->
-        hookrec(rec, direct: flag)
-      {:exclusive, flag}, rec ->
-        hookrec(rec, exclusive: flag)
-      {:public_only, flag}, rec ->
-        hookrec(rec, public_only: flag)
-    end)
-    hooks ++ [{id, hook}]
-  end
-
-  def remove_hook(hooks, id) do
-    Keyword.delete(hooks, id)
-  end
-
-
   def process_hooks({chan, sender, msg}, hooks, info, sock) do
     receiver = get_message_receiver(msg)
 

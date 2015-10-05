@@ -57,16 +57,6 @@ defmodule Chatty.Connection do
   end
 
 
-  def add_hook(server, id, f, opts) do
-    send(server, {__MODULE__, :internal, {:add_hook, id, f, opts}})
-    :ok
-  end
-
-  def remove_hook(server, id) do
-    send(server, {__MODULE__, :internal, {:remove_hook, id}})
-    :ok
-  end
-
   def send_message(server, chan, msg) do
     send(server, {__MODULE__, :internal, {:send_message, chan, msg}})
     :ok
@@ -116,14 +106,6 @@ defmodule Chatty.Connection do
   defp message_loop(sock, server_state=%State{hooks: hooks}, {module, state, info}) do
     retry = false
     receive do
-      {__MODULE__, :internal, {:add_hook, id, f, opts}} ->
-        server_state = Map.update!(server_state, :hooks,
-                                        &HookHelpers.add_hook(&1, id, f, opts))
-
-      {__MODULE__, :internal, {:remove_hook, id}} ->
-        server_state = Map.update!(server_state, :hooks,
-                                        &HookHelpers.remove_hook(&1, id))
-
       {__MODULE__, :internal, {:send_message, chan, msg}} ->
         irc_cmd(sock, "PRIVMSG", "#{chan} :#{msg}")
 

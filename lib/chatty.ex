@@ -16,7 +16,7 @@ defmodule Chatty do
 
     * `id` - arbitrary atom to identify the hook when calling `remove_hook/1`
     * `f` - function of 2 arguments that will be called on incoming messages
-    * `opts` - a keyword list of options
+    * `options` - a keyword list of options
 
   ## Hook options
 
@@ -54,15 +54,20 @@ defmodule Chatty do
       one message for each list item
 
   """
+  @spec add_hook(atom, fun, Keyword.t) :: :ok | {:error, term}
   def add_hook(id, f, opts \\ []) do
-    Connection.add_hook(Chatty.Conn, id, f, opts)
+    Chatty.HookManager.add_hook(id, f, opts)
   end
 
+  @doc """
+  Remove a previously added hook.
+  """
+  @spec remove_hook(atom) :: :ok | :not_found
   def remove_hook(id) do
-    Connection.remove_hook(Chatty.Conn, id)
+    Chatty.HookManager.remove_hook(id)
   end
 
   def send_message(chan, msg) do
-    Connection.send_message(Chatty.Conn, chan, msg)
+    Connection.send_message(Chatty.Connection, chan, msg)
   end
 end

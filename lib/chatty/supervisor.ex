@@ -19,6 +19,7 @@ defmodule Chatty.Supervisor do
       password: Env.get(:password, nil),
     ]
     children = [
+      worker(Chatty.HookManager, []),
       worker(Chatty.Connection, [connection_opts]),
     ]
     supervise(children, strategy: :one_for_one)

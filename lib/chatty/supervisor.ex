@@ -2,6 +2,7 @@ defmodule Chatty.Supervisor do
   use Supervisor
 
   alias Chatty.Env
+  alias Chatty.Connection.UserInfo
 
   def start_link do
     Supervisor.start_link(__MODULE__, [], name: __MODULE__)
@@ -10,17 +11,17 @@ defmodule Chatty.Supervisor do
   ###
 
   def init([]) do
-    connection_opts = [
-      host: Env.get(:host, "irc.freenode.net"),
+    user_info = %UserInfo{
+      host: Env.get(:host, "irc.freenode.net") |> String.to_char_list,
       port: Env.get(:port, 6667),
       channels: Env.get(:channels, []),
       nickname: Env.get(:nickname, "chatty_bot"),
       password: Env.get(:password, nil),
-    ]
+    }
     children = [
       worker(GenEvent, [[name: Chatty.IRCEventManager]]),
-      worker(Chatty.HookManager, []),
-      worker(Chatty.Connection, [connection_opts]),
+      worker(Chatty.HookManager, [user_info]),
+      worker(Chatty.Connection, [user_info]),
     ]
     supervise(children, strategy: :one_for_one)
   end

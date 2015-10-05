@@ -10,17 +10,8 @@ defmodule Chatty.Connection do
   @ping_sec 5 * 60
   @max_attempts 30
 
-  def start_link(options \\ []) do
-    host = Keyword.fetch!(options, :host) |> String.to_char_list
-    port = Keyword.fetch!(options, :port)
-    info = %UserInfo{
-      host: host,
-      port: port,
-      nickname: get_non_nil(options, :nickname),
-      password: Keyword.get(options, :password),
-      channels: get_non_nil(options, :channels),
-    }
-    GenServer.start_link(__MODULE__, [info], name: __MODULE__)
+  def start_link(user_info) do
+    GenServer.start_link(__MODULE__, [user_info], name: __MODULE__)
   end
 
   def send_message(chan, msg) do
@@ -101,7 +92,7 @@ defmodule Chatty.Connection do
       :ping ->
         irc_cmd(sock, "PONG", user_info.nickname)
       message ->
-        GenEvent.notify(Chatty.IRCEventManager, message)
+        GenEvent.notify(Chatty.IRCEventManager, {message, sock})
     end
     {:noreply, %{state | last_message_time: current_time()}}
   end
@@ -139,13 +130,6 @@ defmodule Chatty.Connection do
   end
 
   ###
-
-  defp get_non_nil(keyword, key) do
-    case Keyword.fetch!(keyword, key) do
-      nil -> raise "Got nil for key #{inspect key}"
-      other -> other
-    end
-  end
 
   defp reconnect_after(seconds, attempt_number \\ 0) do
     Logger.info("Retrying connect in #{seconds} seconds.")

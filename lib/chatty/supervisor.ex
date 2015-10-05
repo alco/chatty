@@ -11,7 +11,6 @@ defmodule Chatty.Supervisor do
 
   def init([]) do
     connection_opts = [
-      name: Chatty.Connection,
       host: Env.get(:host, "irc.freenode.net"),
       port: Env.get(:port, 6667),
       channels: Env.get(:channels, []),

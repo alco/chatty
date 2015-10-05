@@ -1,17 +1,14 @@
 defmodule Chatty.Connection do
-  @moduledoc false
+  use GenServer
 
   require Logger
   import Chatty.IRCHelpers
 
   alias Chatty.Connection.UserInfo
 
-  defp get_non_nil(keyword, key) do
-    case Keyword.fetch!(keyword, key) do
-      nil -> raise "Got nil for key #{inspect key}"
-      other -> other
-    end
-  end
+  @sleep_sec 10
+  @ping_sec 5 * 60
+  @max_attempts 30
 
   def start_link(options \\ []) do
     host = Keyword.fetch!(options, :host) |> String.to_char_list
@@ -23,144 +20,150 @@ defmodule Chatty.Connection do
       password: Keyword.get(options, :password),
       channels: get_non_nil(options, :channels),
     }
-
-    parent = self()
-    ref = make_ref()
-    server_pid = spawn_link(fn ->
-      {status, state} = {:ok, nil}
-      send(parent, {ref, status})
-      connect(%State{}, {nil, state, info})
-    end)
-    receive do
-      {^ref, :ok} -> :ok
-      {^ref, {:error, reason}} -> exit(reason)
-    end
-
-    if name=options[:name] do
-      Process.register(server_pid, name)
-    end
-    {:ok, server_pid}
+    GenServer.start_link(__MODULE__, [info], name: __MODULE__)
   end
 
-  def call(server, msg) do
-    ref = make_ref()
-    send(server, {__MODULE__, :call, {self(), ref}, msg})
-    receive do
-      {:reply, ^ref, reply} -> reply
-    end
+  def send_message(chan, msg) do
+    GenServer.cast(__MODULE__, {:send_message, chan, msg})
   end
 
-  def cast(server, msg) do
-    send(server, {__MODULE__, :cast, msg})
+  ###
+
+  def init([user_info]) do
+    # Perform an asynchronous connection attempt. The Chatty.Connection process should not be
+    # blocked internally and should keep going between TCP disconnects and reconnects.
+    send(self(), :connect)
+    state = %{
+      user_info: user_info,
+      sock: nil,
+      last_message_time: nil,
+    }
+    {:ok, state}
   end
 
-
-  def send_message(server, chan, msg) do
-    send(server, {__MODULE__, :internal, {:send_message, chan, msg}})
-    :ok
+  def handle_cast({:send_message, chan, msg}, %{sock: sock} = state) do
+    irc_cmd(sock, "PRIVMSG", "#{chan} :#{msg}")
+    {:noreply, state}
   end
 
+  def handle_info(:connect, state) do
+    handle_info({:connect, 0}, state)
+  end
 
-  @sleep_sec 10
-  @ping_sec 5 * 60
-  @maxattempts 30
-
-  defp connect(server_state, user_state={_, _, %UserInfo{host: host, port: port}}) do
-    case :gen_tcp.connect(host, port, packet: :line, active: true) do
+  def handle_info({:connect, attempt_number}, %{user_info: user_info} = state) do
+    case connect(user_info) do
       {:ok, sock} ->
-        Process.delete(:connect_attempts)
-        handshake(sock, server_state, user_state)
-
-      other ->
-        Logger.warn("Failed to connect: #{inspect other}")
-        nattempts = Process.get(:connect_attempts, 0)
-        if nattempts >= @maxattempts do
-          Logger.error("FAILED TO CONNECT #{@maxattempts} TIMES IN A ROW. SHUTTING DOWN")
-          :erlang.halt()
+        Logger.info("Did connect. Performing IRC handshake")
+        sock = irc_handshake(sock, user_info)
+        send_idle_timeout_guard()
+        {:noreply, %{state | sock: sock, last_message_time: current_time()}}
+      {:error, reason} ->
+        Logger.warn("Failed to connect: #{inspect reason}.")
+        if attempt_number < @max_attempts do
+          # Try one more time after a while
+          reconnect_after(@sleep_sec, attempt_number + 1)
+          {:noreply, state}
         else
-          Process.put(:connect_attempts, nattempts+1)
-          Logger.warn("RETRYING IN #{@sleep_sec} SECONDS")
-          sleep_sec(@sleep_sec)
-          connect(server_state, user_state)
+          # This is useless. Shut us down.
+          Logger.error("Failed to connect repeatedly, shutting down.")
+          {:stop, {:error, :failed_to_connect_repeatedly}, state}
         end
     end
   end
 
-  defp sleep_sec(n), do: :timer.sleep(n * 1000)
+  def handle_info(:check_idle_time, %{last_message_time: nil} = state) do
+    # We're in some transitionary state, don't do any idle checks for now.
+    {:noreply, state}
+  end
 
+  def handle_info(:check_idle_time, %{sock: sock, last_message_time: time} = state) do
+    updated_state = if time_diff(time) >= @ping_sec do
+      # Something may have gone awry. Try reconnecting.
+      :gen_tcp.close(sock)
+      send(self(), :connect)
+      %{state | sock: nil, last_message_time: nil}
+    else
+      # Check back again in the future.
+      send_idle_timeout_guard()
+      state
+    end
+    {:noreply, updated_state}
+  end
 
-  defp handshake(sock, server_state, user_state={_, _, info=%UserInfo{nickname: nick}}) do
-    :random.seed(:erlang.monotonic_time)
+  def handle_info({:tcp, sock, raw_msg}, %{sock: sock, user_info: user_info} = state) do
+    msg = IO.iodata_to_binary(raw_msg) |> String.strip
+    Logger.debug(["TCP message: ", msg])
 
+    case translate_msg(msg) do
+      nil ->
+        nil
+      :ping ->
+        irc_cmd(sock, "PONG", user_info.nickname)
+      {:topic, _chan, _topic} ->
+        nil
+      {:privmsg, chan, sender, msg} ->
+        # TODO: process each hook in a separate Task
+        try do
+          hooks = []
+          Chatty.HookHelpers.process_hooks({chan, sender, msg}, hooks, user_info, sock)
+        rescue
+          x -> Logger.warn(inspect(x))
+        end
+    end
+    {:noreply, %{state | last_message_time: current_time()}}
+  end
+
+  def handle_info({:tcp_closed, sock}, %{sock: sock} = state) do
+    Logger.warn("TCP socket closed.")
+    reconnect_after(@sleep_sec)
+    {:noreply, %{state | sock: nil, last_message_time: nil}}
+  end
+
+  def handle_info({:tcp_error, sock, reason}, %{sock: sock} = state) do
+    Logger.error("TCP socket error: #{inspect reason}.")
+    :gen_tcp.close(sock)
+    reconnect_after(@sleep_sec)
+    {:noreply, %{state | sock: nil, last_message_time: nil}}
+  end
+
+  ###
+
+  defp connect(%UserInfo{host: host, port: port}) do
+    :gen_tcp.connect(host, port, packet: :line, active: true)
+  end
+
+  defp irc_handshake(sock, %UserInfo{nickname: nickname, password: password, channels: channels}) do
     sock
     |> irc_cmd("PASS", "*")
-    |> irc_cmd("NICK", nick)
-    |> irc_cmd("USER", "#{nick} 0 * :BEAM")
-    |> irc_identify(info.password)
-    |> irc_join(info.channels)
-    |> message_loop(server_state, user_state)
+    |> irc_cmd("NICK", nickname)
+    |> irc_cmd("USER", "#{nickname} 0 * :BEAM")
+    |> irc_identify(password)
+    |> irc_join(channels)
   end
 
-  defp message_loop(sock, server_state=%{hooks: hooks}, {module, state, info}) do
-    retry = false
-    receive do
-      {__MODULE__, :internal, {:send_message, chan, msg}} ->
-        irc_cmd(sock, "PRIVMSG", "#{chan} :#{msg}")
+  defp send_idle_timeout_guard() do
+    Process.send_after(self(), :check_idle_time, @ping_sec * 1000)
+  end
 
-      #{__MODULE__, :call, {caller_pid, ref}=from, msg} ->
-        #state = case module.handle_call(msg, from, state) do
-          #{:reply, reply, new_state} ->
-            #send(caller_pid, {:reply, ref, reply})
-            #new_state
-        #end
+  ###
 
-      #{__MODULE__, :cast, msg} ->
-        #state = case module.handle_cast(msg, state) do
-          #{:noreply, new_state} -> new_state
-        #end
-
-      {:tcp, ^sock, msg} ->
-        msg = IO.iodata_to_binary(msg) |> String.strip
-        Logger.info(msg)
-
-        case translate_msg(msg) do
-          nil   -> nil
-          :ping -> irc_cmd(sock, "PONG", info.nickname)
-          {:topic, _chan, _topic} -> nil
-
-          {:privmsg, chan, sender, msg} ->
-            try do
-              Chatty.HookHelpers.process_hooks({chan, sender, msg}, hooks, info, sock)
-            rescue
-              x -> Logger.info(inspect(x))
-            end
-        end
-
-      {:tcp_closed, ^sock} ->
-        Logger.warn("SOCKET CLOSE; RETRYING CONNECT IN #{@sleep_sec} SECONDS")
-        retry = true
-
-      {:tcp_error, ^sock, reason} ->
-        Logger.warn("SOCKET ERROR: #{inspect reason}\nRETRYING CONNECT IN #{@sleep_sec} SECONDS")
-        retry = true
-
-      other ->
-        raise "Got unexpected message: #{inspect other}"
-        #state = case module.handle_info(other) do
-          #{:noreply, new_state} -> new_state
-        #end
-
-      after @ping_sec * 1000 ->
-        Logger.info("No ping message in #{@ping_sec} seconds. Retrying connect.")
-        :gen_tcp.close(sock)
-        retry = true
+  defp get_non_nil(keyword, key) do
+    case Keyword.fetch!(keyword, key) do
+      nil -> raise "Got nil for key #{inspect key}"
+      other -> other
     end
+  end
 
-    if retry do
-      sleep_sec(@sleep_sec)
-      connect(server_state, {module, state, info})
-    else
-      message_loop(sock, server_state, {module, state, info})
-    end
+  defp reconnect_after(seconds, attempt_number \\ 0) do
+    Logger.info("Retrying connect in #{seconds} seconds.")
+    Process.send_after(self(), {:connect, attempt_number}, seconds * 1000)
+  end
+
+  defp current_time do
+    :erlang.monotonic_time
+  end
+
+  defp time_diff(time) do
+    :erlang.convert_time_unit(current_time() - time, :native, :seconds)
   end
 end

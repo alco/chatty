@@ -1,6 +1,8 @@
 defmodule Chatty.HookManager do
   use GenServer
 
+  require Logger
+
   alias Chatty.Hook
 
   def start_link do
@@ -16,13 +18,34 @@ defmodule Chatty.HookManager do
     GenServer.call(__MODULE__, {:remove_hook, id})
   end
 
+  def process_message(message) do
+    GenServer.cast(__MODULE__, {:process_message, message})
+  end
+
   ###
 
   def init([]) do
+    GenEvent.add_handler(Chatty.IRCEventManager, Chatty.IRCHookHandler, __MODULE__)
     state = %{
       hooks: [],
     }
     {:ok, state}
+  end
+
+  def handle_cast({:process_message, message}, %{hooks: hooks} = state) do
+    Logger.debug("HookManager: Handling #{inspect message}")
+    case message do
+      {:topic, _chan, _topic} ->
+        nil
+      {command, _chan, _sender} when command in [:join, :part] ->
+        nil
+      {:privmsg, chan, sender, message} ->
+        # FIXME: update the architecture of message processing by hooks
+        user_info = nil
+        sock = nil
+        Chatty.HookHelpers.process_hooks({chan, sender, message}, hooks, user_info, sock)
+    end
+    {:noreply, state}
   end
 
   def handle_call({:add_hook, id, f, options}, _from, state) do

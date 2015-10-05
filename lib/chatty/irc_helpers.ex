@@ -40,11 +40,22 @@ defmodule Chatty.IRCHelpers do
       'PRIVMSG' ->
         [chan, msg] = args
         {:privmsg, chan, sender, msg}
+      # Initial topic message that we get upon joining a channel
       '332' ->
         [_, chan, topic] = args
         {:topic, chan, topic}
+      # A topic change while we're inside a channel
+      'TOPIC' ->
+        [chan, topic] = args
+        {:topic, chan, topic}
       'PING' ->
         :ping
+      'JOIN' ->
+        [chan | _] = args
+        {:join, chan, sender}
+      'PART' ->
+        [chan | _] = args
+        {:part, chan, sender}
       _ -> nil
     end
   end

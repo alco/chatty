@@ -95,20 +95,13 @@ defmodule Chatty.Connection do
     Logger.debug(["TCP message: ", msg])
 
     case translate_msg(msg) do
+      # TODO: we probably shouldn't ignore unknown messages like this
       nil ->
         nil
       :ping ->
         irc_cmd(sock, "PONG", user_info.nickname)
-      {:topic, _chan, _topic} ->
-        nil
-      {:privmsg, chan, sender, msg} ->
-        # TODO: process each hook in a separate Task
-        try do
-          hooks = []
-          Chatty.HookHelpers.process_hooks({chan, sender, msg}, hooks, user_info, sock)
-        rescue
-          x -> Logger.warn(inspect(x))
-        end
+      message ->
+        GenEvent.notify(Chatty.IRCEventManager, message)
     end
     {:noreply, %{state | last_message_time: current_time()}}
   end

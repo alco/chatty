@@ -18,6 +18,7 @@ defmodule Chatty.Supervisor do
       password: Env.get(:password, nil),
     ]
     children = [
+      worker(GenEvent, [[name: Chatty.IRCEventManager]]),
       worker(Chatty.HookManager, []),
       worker(Chatty.Connection, [connection_opts]),
     ]

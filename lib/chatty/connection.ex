@@ -4,9 +4,7 @@ defmodule Chatty.Connection do
   require Logger
   import Chatty.IRCHelpers
 
-  alias Chatty.Connection.State
   alias Chatty.Connection.UserInfo
-  alias Chatty.HookHelpers
 
   defp get_non_nil(keyword, key) do
     case Keyword.fetch!(keyword, key) do
@@ -103,7 +101,7 @@ defmodule Chatty.Connection do
     |> message_loop(server_state, user_state)
   end
 
-  defp message_loop(sock, server_state=%State{hooks: hooks}, {module, state, info}) do
+  defp message_loop(sock, server_state=%{hooks: hooks}, {module, state, info}) do
     retry = false
     receive do
       {__MODULE__, :internal, {:send_message, chan, msg}} ->
@@ -132,7 +130,7 @@ defmodule Chatty.Connection do
 
           {:privmsg, chan, sender, msg} ->
             try do
-              HookHelpers.process_hooks({chan, sender, msg}, hooks, info, sock)
+              Chatty.HookHelpers.process_hooks({chan, sender, msg}, hooks, info, sock)
             rescue
               x -> Logger.info(inspect(x))
             end

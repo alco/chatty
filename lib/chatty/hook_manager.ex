@@ -101,14 +101,12 @@ defmodule Chatty.HookManager do
 
   defp process_message({chan, sender, message}, hooks, user_info, sock) do
     receiver = get_message_receiver(message)
-    Logger.debug(["Message: ", inspect(message)])
-    Logger.debug(["Receiver: ", inspect(receiver)])
 
     hooks
     |> Enum.map(&hook_to_task(&1, chan, sender, message, receiver, user_info))
     |> Enum.reject(&is_nil/1)
     |> collect_tasks()
-    |> Enum.map(&send_response(sock, &1))
+    |> send_responses(sock)
   end
 
   defp hook_to_task(hook, chan, sender, message, receiver, user_info) do
@@ -127,17 +125,20 @@ defmodule Chatty.HookManager do
             {chan, _} -> chan
           end
         if response_chan != nil do
-          Task.async(fn ->
+          task = Task.async(fn ->
             :random.seed(:erlang.monotonic_time)
             resolve_hook_result(hook.fn.(sender, input), response_chan, sender)
           end)
+          {hook, task}
         end
       end
     end
   end
 
   defp collect_tasks(tasks) do
-    Enum.map(tasks, &Task.await/1)
+    tasks
+    |> Enum.map(fn {hook, task} -> {hook, Task.await(task)} end)
+    |> Enum.reject(fn {_, response} -> response == [] end)
   end
 
   defp get_message_receiver(msg) do
@@ -238,6 +239,19 @@ defmodule Chatty.HookManager do
   defp response_prefix(:reply, {_, chan}, sender),
     do: "#{chan} :#{sender}: "
 
-  defp send_response(sock, response),
+
+  defp send_responses(responses, sock) do
+    Enum.map(responses, fn
+      {%Hook{exclusive: true}, response} ->
+        if match?([_], responses) do
+          # Only send exclusive replies if no other hook matched the message
+          send_response(response, sock)
+        end
+      {_, response} ->
+        send_response(response, sock)
+    end)
+  end
+
+  defp send_response(response, sock),
     do: Enum.each(response, fn {msg_type, payload} -> irc_cmd(sock, msg_type, payload) end)
 end

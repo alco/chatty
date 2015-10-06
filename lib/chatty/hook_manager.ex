@@ -125,6 +125,7 @@ defmodule Chatty.HookManager do
             {chan, _} -> chan
           end
         if response_chan != nil do
+          # TODO: test resilience to crashes in tasks
           task = Task.async(fn ->
             :random.seed(:erlang.monotonic_time)
             resolve_hook_result(hook.fn.(sender, input), response_chan, sender)

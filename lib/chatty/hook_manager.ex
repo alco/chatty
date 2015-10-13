@@ -170,6 +170,8 @@ defmodule Chatty.HookManager do
   end
 
   defp collect_tasks(hook_tasks, max_task_timeout, timestamp, results) do
+    # TODO: kill overtime tasks and make sure we don't get results from tasks spawned during
+    # previous invocations of process_message()
     receive do
       {:hook_task_result, ref, result} ->
         new_timestamp = :erlang.monotonic_time

@@ -20,6 +20,7 @@ defmodule Chatty.Supervisor do
     }
     children = [
       worker(GenEvent, [[name: Chatty.IRCEventManager]]),
+      worker(Chatty.HookAgent, []),
       worker(Chatty.HookManager, [user_info]),
       worker(Chatty.Connection, [user_info]),
     ]

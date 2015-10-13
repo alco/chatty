@@ -4,6 +4,7 @@ defmodule Chatty.HookManager do
   require Logger
 
   alias Chatty.Hook
+  alias Chatty.HookAgent
 
   import Chatty.IRCHelpers, only: [irc_cmd: 3]
 
@@ -12,7 +13,6 @@ defmodule Chatty.HookManager do
   end
 
   # TODO: consider replacing the anonymous function with a module and a behaviour
-  # TODO: store all of the hooks someplace else to survive HookManager crashes
   def add_hook(id, f, options \\ []) do
     GenServer.call(__MODULE__, {:add_hook, id, f, options})
   end
@@ -31,7 +31,7 @@ defmodule Chatty.HookManager do
     GenEvent.add_handler(Chatty.IRCEventManager, Chatty.IRCHookHandler, __MODULE__)
     state = %{
       user_info: user_info,
-      hooks: [],
+      hooks: HookAgent.get_all_hooks,
     }
     {:ok, state}
   end
@@ -57,7 +57,8 @@ defmodule Chatty.HookManager do
     hook = %Hook{id: id, fn: f}
     {response, updated_state} = case apply_hook_options(hook, options) do
       {:ok, hook} ->
-        {:ok, Map.update!(state, :hooks, & &1 ++ [hook])}
+        :ok = HookAgent.put_hook(id, hook)
+        {:ok, Map.update!(state, :hooks, &Map.put(&1, id, hook))}
       {:bad_option, _} = reason ->
         {{:error, reason}, state}
     end
@@ -65,10 +66,9 @@ defmodule Chatty.HookManager do
   end
 
   def handle_call({:remove_hook, id}, _from, %{hooks: hooks} = state) do
-    updated_state = Map.update!(state, :hooks, fn hooks ->
-      Enum.reject(hooks, fn %Hook{id: hook_id} -> hook_id == id end)
-    end)
+    updated_state = Map.update!(state, :hooks, &Map.delete(&1, id))
     response = if hooks != updated_state.hooks do
+      :ok = HookAgent.delete_hook(id)
       :ok
     else
       :not_found
@@ -103,7 +103,7 @@ defmodule Chatty.HookManager do
     receiver = get_message_receiver(message)
 
     hooks
-    |> Enum.map(&hook_to_task(&1, chan, sender, message, receiver, user_info))
+    |> Enum.map(fn {_, hook} -> hook_to_task(hook, chan, sender, message, receiver, user_info) end)
     |> Enum.reject(&is_nil/1)
     |> collect_tasks()
     |> send_responses(sock)

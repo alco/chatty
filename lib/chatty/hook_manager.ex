@@ -5,6 +5,7 @@ defmodule Chatty.HookManager do
 
   alias Chatty.Hook
   alias Chatty.HookAgent
+  alias Chatty.HookTaskSupervisor
 
   import Chatty.IRCHelpers, only: [irc_cmd: 3]
 
@@ -29,11 +30,16 @@ defmodule Chatty.HookManager do
 
   def init([user_info]) do
     GenEvent.add_handler(Chatty.IRCEventManager, Chatty.IRCHookHandler, __MODULE__)
+    hooks = HookAgent.get_all_hooks
     state = %{
       user_info: user_info,
-      hooks: HookAgent.get_all_hooks,
+      hooks: hooks,
     }
     {:ok, state}
+  end
+
+  def handle_cast({:process_message, _, _}, %{hooks: hooks} = state) when hooks == %{} do
+    {:noreply, state}
   end
 
   def handle_cast({:process_message, message, sock}, %{user_info: user_info, hooks: hooks} = state)
@@ -47,7 +53,7 @@ defmodule Chatty.HookManager do
         # TODO: support hooks for these messages
         nil
       {:privmsg, chan, sender, message} ->
-        process_message({chan, sender, message}, hooks, user_info, sock)
+        process_message({chan, sender, message}, hooks, user_info, max_hook_timeout(hooks), sock)
     end
     {:noreply, state}
   end
@@ -79,16 +85,28 @@ defmodule Chatty.HookManager do
     {:reply, response, updated_state}
   end
 
+  def handle_info({:hook_task_result, ref, result}, state) do
+    Logger.debug("Got unprocessed task result with ref #{inspect ref}: #{inspect result}")
+    {:noreply, state}
+  end
+
   ###
 
   defp apply_hook_options(hook, options) do
     {hook, bad_options} = Enum.reduce(options, {hook, []}, fn option, {hook, bad_options} ->
       hook = case option do
-        {:in, type}          -> %Hook{hook | type: type}
-        {:channel, chan}     -> %Hook{hook | chan: chan}
-        {:direct, flag}      -> %Hook{hook | direct: flag}
-        {:exclusive, flag}   -> %Hook{hook | exclusive: flag}
-        {:public_only, flag} -> %Hook{hook | public_only: flag}
+        {:in, type} when is_atom(type) ->
+          %Hook{hook | type: type}
+        {:channel, chan} when is_binary(chan) ->
+          %Hook{hook | chan: chan}
+        {:direct, flag} when is_boolean(flag) ->
+          %Hook{hook | direct: flag}
+        {:exclusive, flag} when is_boolean(flag) ->
+          %Hook{hook | exclusive: flag}
+        {:public_only, flag} when is_boolean(flag) ->
+          %Hook{hook | public_only: flag}
+        {:task_timeout, timeout} when is_integer(timeout) and timeout > 0 ->
+          %Hook{hook | task_timeout: timeout}
         _ ->
           bad_options = [option | bad_options]
           hook
@@ -102,13 +120,14 @@ defmodule Chatty.HookManager do
     end
   end
 
-  defp process_message({chan, sender, message}, hooks, user_info, sock) do
+  defp process_message({chan, sender, message}, hooks, user_info, max_task_timeout, sock) do
     receiver = get_message_receiver(message)
 
     hooks
     |> Enum.map(fn {_, hook} -> hook_to_task(hook, chan, sender, message, receiver, user_info) end)
     |> Enum.reject(&is_nil/1)
-    |> collect_tasks()
+    |> Enum.into(%{})
+    |> collect_tasks(max_task_timeout)
     |> send_responses(sock)
   end
 
@@ -129,20 +148,47 @@ defmodule Chatty.HookManager do
           end
         if response_chan != nil do
           # TODO: test resilience to crashes in tasks
-          task = Task.async(fn ->
+          parent = self()
+          ref = make_ref()
+          {:ok, task} = Task.Supervisor.start_child(HookTaskSupervisor, fn ->
             :random.seed(:erlang.monotonic_time)
-            resolve_hook_result(hook.fn.(sender, input), response_chan, sender)
+            result = resolve_hook_result(hook.fn.(sender, input), response_chan, sender)
+            send(parent, {:hook_task_result, ref, result})
           end)
-          {hook, task}
+          {ref, {hook, task}}
         end
       end
     end
   end
 
-  defp collect_tasks(tasks) do
-    tasks
-    |> Enum.map(fn {hook, task} -> {hook, Task.await(task)} end)
-    |> Enum.reject(fn {_, response} -> response == [] end)
+  defp collect_tasks(hook_tasks, max_task_timeout) do
+    collect_tasks(hook_tasks, max_task_timeout, :erlang.monotonic_time, [])
+  end
+
+  defp collect_tasks(hook_tasks, _, _, results) when hook_tasks == %{} do
+    results
+  end
+
+  defp collect_tasks(hook_tasks, max_task_timeout, timestamp, results) do
+    receive do
+      {:hook_task_result, ref, result} ->
+        new_timestamp = :erlang.monotonic_time
+        elapsed_milliseconds =
+          :erlang.convert_time_unit(new_timestamp - timestamp, :native, :milli_seconds)
+        remaining_timeout = max(0, max_task_timeout - elapsed_milliseconds)
+
+        {{hook, _}, remaining_hook_tasks} = Map.pop(hook_tasks, ref)
+        updated_results = if result != [] do
+          [{hook, result} | results]
+        else
+          results
+        end
+
+        collect_tasks(remaining_hook_tasks, remaining_timeout, new_timestamp, updated_results)
+
+      after max_task_timeout ->
+        results
+    end
   end
 
   defp get_message_receiver(msg) do
@@ -258,4 +304,10 @@ defmodule Chatty.HookManager do
 
   defp send_response(response, sock),
     do: Enum.each(response, fn {msg_type, payload} -> irc_cmd(sock, msg_type, payload) end)
+
+  defp max_hook_timeout(hooks) do
+    hooks
+    |> Enum.map(fn {_, %Hook{task_timeout: timeout}} -> timeout end)
+    |> Enum.max
+  end
 end

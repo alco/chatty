@@ -22,6 +22,7 @@ defmodule Chatty.Supervisor do
       worker(GenEvent, [[name: Chatty.IRCEventManager]]),
       worker(Chatty.HookAgent, []),
       worker(Chatty.HookManager, [user_info]),
+      supervisor(Task.Supervisor, [[name: Chatty.HookTaskSupervisor]]),
       worker(Chatty.Connection, [user_info]),
     ]
     supervise(children, strategy: :one_for_one)

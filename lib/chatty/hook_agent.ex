@@ -9,7 +9,14 @@ defmodule Chatty.HookAgent do
   end
 
   def put_hook(id, %Chatty.Hook{} = hook) when is_atom(id) do
-    Agent.update(__MODULE__, &Map.put(&1, id, hook))
+    Agent.get_and_update(__MODULE__, fn hook_map ->
+      updated_map = Map.put_new(hook_map, id, hook)
+      {updated_map != hook_map, updated_map}
+    end)
+    |> case do
+      true -> :ok
+      false -> :id_collision
+    end
   end
 
   def get_all_hooks do

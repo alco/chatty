@@ -53,12 +53,15 @@ defmodule Chatty.HookManager do
   end
 
   def handle_call({:add_hook, id, f, options}, _from, state) do
-    # TODO: handle id collisions
     hook = %Hook{id: id, fn: f}
     {response, updated_state} = case apply_hook_options(hook, options) do
       {:ok, hook} ->
-        :ok = HookAgent.put_hook(id, hook)
-        {:ok, Map.update!(state, :hooks, &Map.put(&1, id, hook))}
+        case HookAgent.put_hook(id, hook) do
+          :ok ->
+            {:ok, Map.update!(state, :hooks, &Map.put(&1, id, hook))}
+          :id_collision ->
+            {{:error, :hook_id_already_used}, state}
+        end
       {:bad_option, _} = reason ->
         {{:error, reason}, state}
     end
@@ -73,7 +76,7 @@ defmodule Chatty.HookManager do
     else
       :not_found
     end
-    {:reply, response, state}
+    {:reply, response, updated_state}
   end
 
   ###

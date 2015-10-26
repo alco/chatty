@@ -56,7 +56,9 @@ defmodule Chatty.IRCHelpers do
       'PART' ->
         [chan | _] = args
         {:part, chan, sender}
-      _ -> nil
+      rest = _ -> 
+        Logger.warn("Intercepted this unhandled message: #{inspect(rest)}")
+        nil
     end
   end
 

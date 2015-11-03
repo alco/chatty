@@ -1,10 +1,10 @@
 defmodule Chatty.IRCHelpers do
   @moduledoc false
 
-  import Chatty.Logger
+  require Logger
 
   def irc_cmd(sock, cmd, rest) do
-    log "Executing command #{cmd} with args #{inspect rest}"
+    Logger.info(["Executing command #{cmd} with args ", inspect(rest)])
     :ok = :gen_tcp.send(sock, [cmd, " ", rest, "\r\n"])
     sock
   end
@@ -30,7 +30,9 @@ defmodule Chatty.IRCHelpers do
     sender = if prefix do
       case Regex.run(~r"^([^! ]+)(?:$|!)", List.to_string(prefix)) do
         [_, sender] -> sender
-        other -> log "bad sender: #{inspect prefix} #{inspect other}"; nil
+        other ->
+          Logger.info(["bad sender: ", inspect(prefix), " ", inspect(other)])
+          nil
       end
     end
 
@@ -39,11 +41,24 @@ defmodule Chatty.IRCHelpers do
         [chan, msg] = args
         {:privmsg, chan, sender, msg}
       '332' ->
+        # Initial topic message that we get upon joining a channel
         [_, chan, topic] = args
+        {:topic, chan, topic}
+      'TOPIC' ->
+        # A topic change while we're inside a channel
+        [chan, topic] = args
         {:topic, chan, topic}
       'PING' ->
         :ping
-      _ -> nil
+      'JOIN' ->
+        [chan | _] = args
+        {:join, chan, sender}
+      'PART' ->
+        [chan | _] = args
+        {:part, chan, sender}
+      other ->
+        Logger.warn(["Unhandled IRC message: ", inspect(other)])
+        {:error, :unsupported}
     end
   end
 

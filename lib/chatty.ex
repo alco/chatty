@@ -37,6 +37,11 @@ defmodule Chatty do
     * `channel: <string>` - the hook will only be active on the specified
       channel
 
+    * `kind: :privmsg | :topic | :presence ` - the kind of messages this hook will
+      handle. `:privmsg` stands for simple text messages. `:topic` hooks are invoked any time
+      the topic of the channel is changed. `:presence` hooks are called when a user joins
+      or leaves the channel.
+
   ## Hook results
 
   A hook function may return one of the following values:
@@ -54,9 +59,19 @@ defmodule Chatty do
       one message for each list item
 
   """
-  @spec add_hook(atom, fun, Keyword.t) :: :ok | {:error, term}
-  def add_hook(id, f, opts \\ []) do
-    Chatty.HookManager.add_hook(id, f, opts)
+  @spec add_privmsg_hook(atom, fun, Keyword.t) :: :ok | {:error, term}
+  def add_privmsg_hook(id, f, opts \\ []) do
+    Chatty.HookManager.add_hook(:privmsg, id, f, opts)
+  end
+
+  @spec add_topic_hook(atom, fun, Keyword.t) :: :ok | {:error, term}
+  def add_topic_hook(id, f, opts \\ []) do
+    Chatty.HookManager.add_hook(:topic, id, f, opts)
+  end
+
+  @spec add_presence_hook(atom, fun, Keyword.t) :: :ok | {:error, term}
+  def add_presence_hook(id, f, opts \\ []) do
+    Chatty.HookManager.add_hook(:presence, id, f, opts)
   end
 
   @doc """
@@ -67,7 +82,15 @@ defmodule Chatty do
     Chatty.HookManager.remove_hook(id)
   end
 
+  @spec send_message(String.t, String.t) :: :ok
   def send_message(chan, msg) do
     Connection.send_message(Chatty.Connection, chan, msg)
+  end
+
+  def init_hooks() do
+    add_privmsg_hook :ping, &Chatty.Hooks.PingHook.run/2, direct: true
+    add_privmsg_hook :rude, &Chatty.Hooks.RudeReplyHook.run/2, direct: true, exclusive: true
+    add_topic_hook :topic, &Chatty.Hooks.TopicHook.run/3
+    add_presence_hook :presence, &Chatty.Hooks.PresenceHook.run/3
   end
 end

@@ -8,5 +8,6 @@ defmodule Chatty.Hook do
     chan: nil,
     public_only: true,
     task_timeout: 2000,
+    kind: :privmsg,
   ]
 end

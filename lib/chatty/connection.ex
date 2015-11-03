@@ -28,6 +28,7 @@ defmodule Chatty.Connection do
       user_info: user_info,
       sock: nil,
       last_message_time: nil,
+      channel_topics: %{},
     }
     {:ok, state}
   end
@@ -85,16 +86,24 @@ defmodule Chatty.Connection do
     msg = IO.iodata_to_binary(raw_msg) |> String.strip
     Logger.debug(["TCP message: ", msg])
 
-    case translate_msg(msg) do
+    updated_state = case translate_msg(msg) do
       {:error, :unsupported} ->
         Logger.debug(["Ignoring unsupported message: ", msg])
-        nil
+        state
       :ping ->
         irc_cmd(sock, "PONG", user_info.nickname)
+        state
+      {:channel_topic, [chan, topic]} ->
+        Map.update!(state, :channel_topics, &Map.put(&1, chan, topic))
+      {:topic_change, [chan, _sender, topic]} = message ->
+        Map.update!(state, :channel_topics, &Map.put(&1, chan, topic))
+        GenEvent.notify(Chatty.IRCEventManager, {message, sock})
+        state
       message ->
         GenEvent.notify(Chatty.IRCEventManager, {message, sock})
+        state
     end
-    {:noreply, %{state | last_message_time: current_time()}}
+    {:noreply, %{updated_state | last_message_time: current_time()}}
   end
 
   def handle_info({:tcp_closed, sock}, %{sock: sock} = state) do

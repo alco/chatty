@@ -13,4 +13,3 @@ defmodule Chatty.Hooks.PingHook do
     end
   end
 end
-

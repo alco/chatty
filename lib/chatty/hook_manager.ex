@@ -16,8 +16,8 @@ defmodule Chatty.HookManager do
   end
 
   # TODO: consider replacing the anonymous function with a module and a behaviour
-  def add_hook(id, f, options \\ []) do
-    GenServer.call(__MODULE__, {:add_hook, id, f, options})
+  def add_hook(kind, id, f, options \\ []) do
+    GenServer.call(__MODULE__, {:add_hook, kind, id, f, options})
   end
 
   def remove_hook(id) do
@@ -44,38 +44,38 @@ defmodule Chatty.HookManager do
     {:noreply, state}
   end
 
-  def handle_cast({:process_message, message, sock}, %{user_info: user_info, hooks: hooks} = state)
+  def handle_cast(
+    {:process_message, {message_kind, message_args} = message, sock},
+    %{user_info: user_info, hooks: hooks} = state)
   do
-    Logger.debug("HookManager: Handling #{inspect message}")
-    case message do
-      {:topic, _chan, _topic} ->
-        # TODO: support hooks for this message
-        nil
-      {command, _chan, _sender} when command in [:join, :part] ->
-        # TODO: support hooks for these messages
-        nil
-      {:privmsg, chan, sender, message} ->
-        process_message({chan, sender, message}, hooks, user_info, max_hook_timeout(hooks), sock)
-    end
+    Logger.debug(["HookManager: Handling ", inspect(message)])
+    hooks_to_invoke = filter_applicable_hooks(hooks, message_kind)
+    max_hook_timeout = max_hook_timeout(hooks_to_invoke)
+    hooks_to_tasks(message_kind, message_args, hooks_to_invoke, user_info)
+    |> process_tasks(max_hook_timeout, sock)
     {:noreply, state}
   end
 
-  def handle_call({:add_hook, id, f, options}, _from, state) do
-    hook = %Hook{
-      id: id, fn: f, task_timeout: Chatty.Env.get(:hook_task_timeout, @default_task_timeout)
-    }
-    {response, updated_state} = case apply_hook_options(hook, options) do
-      {:ok, hook} ->
-        case HookAgent.put_hook(id, hook) do
-          :ok ->
-            {:ok, Map.update!(state, :hooks, &Map.put(&1, id, hook))}
-          :id_collision ->
-            {{:error, :hook_id_already_used}, state}
-        end
-      {:bad_option, _} = reason ->
-        {{:error, reason}, state}
+  def handle_call({:add_hook, kind, id, f, options}, _from, state) do
+    if valid_hook_kind?(kind) do
+      hook = %Hook{
+        id: id, fn: f, kind: kind,
+        task_timeout: Chatty.Env.get(:hook_task_timeout, @default_task_timeout)
+      }
+      {response, updated_state} = case apply_hook_options(hook, options) do
+        {:ok, hook} ->
+          case HookAgent.put_hook(id, hook) do
+            :ok ->
+              {:ok, Map.update!(state, :hooks, &Map.put(&1, id, hook))}
+            :id_collision ->
+              {{:error, :hook_id_already_used}, state}
+          end
+        {:bad_option, _} = reason ->
+          {{:error, reason}, state}
+      end
+      {:reply, response, updated_state}
+    else
     end
-    {:reply, response, updated_state}
   end
 
   def handle_call({:remove_hook, id}, _from, %{hooks: hooks} = state) do
@@ -95,6 +95,10 @@ defmodule Chatty.HookManager do
   end
 
   ###
+
+  defp valid_hook_kind?(kind) do
+    kind in [:privmsg, :topic, :presence]
+  end
 
   defp apply_hook_options(hook, options) do
     {hook, bad_options} = Enum.reduce(options, {hook, []}, fn option, {hook, bad_options} ->
@@ -124,44 +128,86 @@ defmodule Chatty.HookManager do
     end
   end
 
-  defp process_message({chan, sender, message}, hooks, user_info, max_task_timeout, sock) do
-    receiver = get_message_receiver(message)
-
+  defp filter_applicable_hooks(hooks, message_kind) do
+    applicable_hook_kind = applicable_hook_kind(message_kind)
     hooks
-    |> Enum.map(fn {_, hook} -> hook_to_task(hook, chan, sender, message, receiver, user_info) end)
+    |> Enum.map(fn {_, hook} -> hook end)
+    |> Enum.filter(fn %Hook{kind: hook_kind} -> hook_kind == applicable_hook_kind end)
+  end
+
+  defp hooks_to_tasks(:privmsg, [chan, sender, message], hooks, user_info) do
+    receiver = get_message_receiver(message)
+    hooks
+    |> Enum.filter(&hook_applicable_on_chan?(&1, chan))
+    |> Enum.filter(&hook_applicable_to_receiver?(&1, receiver, user_info.nickname))
+    |> Enum.map(&{&1, response_chan_for_hook(&1, chan, sender, user_info.nickname)})
+    |> Enum.reject(fn {_hook, response_chan} -> is_nil(response_chan) end)
+    |> Enum.map(fn {hook, response_chan} ->
+      args = build_privmsg_args(hook, message, sender, receiver)
+      hook_to_task(hook, response_chan, sender, args)
+    end)
+  end
+
+  defp hooks_to_tasks(action, [chan, sender], hooks, user_info) when action in [:join, :part] do
+    response_chan = resolve_response_channel(chan, user_info.nickname, sender)
+    hooks
+    |> Enum.filter(&hook_applicable_on_chan?(&1, chan))
+    |> Enum.map(&hook_to_task(&1, response_chan, sender, [chan, action, sender]))
+  end
+
+  defp hooks_to_tasks(:topic_change, [chan, sender, _topic] = args, hooks, user_info) do
+    # TODO: extract chan and sender to be common for all hook types
+    response_chan = resolve_response_channel(chan, user_info.nickname, sender)
+    hooks
+    |> Enum.filter(&hook_applicable_on_chan?(&1, chan))
+    |> Enum.map(&hook_to_task(&1, response_chan, nil, args))
+  end
+
+  defp process_tasks(hook_tasks, max_task_timeout, sock) do
+    hook_tasks
     |> Enum.reject(&is_nil/1)
     |> Enum.into(%{})
     |> collect_tasks(max_task_timeout)
     |> send_responses(sock)
   end
 
-  defp hook_to_task(hook, chan, sender, message, receiver, user_info) do
-    applicable_on_chan? = is_nil(hook.chan) or ("#" <> hook.chan == chan)
-    if applicable_on_chan? do
-      applicable_to_receiver? = (not hook.direct) or (receiver == user_info.nickname)
-      if applicable_to_receiver? do
-        message_sans_receiver = strip_message_receiver(hook.direct, message, receiver)
-        input = case hook.type do
-          :text -> message_sans_receiver
-          :token -> tokenize(message_sans_receiver)
-        end
-        response_chan =
-          case {resolve_response_channel(chan, user_info.nickname, sender), hook.public_only} do
-            {{:private, _}, true} -> nil
-            {chan, _} -> chan
-          end
-        if response_chan != nil do
-          # TODO: test resilience to crashes in tasks
-          parent = self()
-          ref = make_ref()
-          {:ok, task} = Task.Supervisor.start_child(HookTaskSupervisor, fn ->
-            :random.seed(:erlang.monotonic_time)
-            result = resolve_hook_result(hook.fn.(sender, input), response_chan, sender)
-            send(parent, {:hook_task_result, ref, result})
-          end)
-          {ref, {hook, task}}
-        end
-      end
+  defp build_privmsg_args(hook, message, sender, receiver) do
+    message_sans_receiver = strip_message_receiver(hook.direct, message, receiver)
+    input = case hook.type do
+      :text -> message_sans_receiver
+      :token -> tokenize(message_sans_receiver)
+    end
+    [sender, input]
+  end
+
+  defp hook_to_task(hook, response_chan, sender, args) do
+    # TODO: test resilience to crashes in tasks
+    parent = self()
+    ref = make_ref()
+    {:ok, task} = Task.Supervisor.start_child(HookTaskSupervisor, fn ->
+      :random.seed(:erlang.monotonic_time)
+      result = resolve_hook_result(apply(hook.fn, args), response_chan, sender)
+      send(parent, {:hook_task_result, ref, result})
+    end)
+    {ref, {hook, task}}
+  end
+
+  defp applicable_hook_kind(:topic_change), do: :topic
+  defp applicable_hook_kind(:privmsg), do: :privmsg
+  defp applicable_hook_kind(presence) when presence in [:join, :part], do: :presence
+
+  defp hook_applicable_on_chan?(hook, chan) do
+    is_nil(hook.chan) or ("#" <> hook.chan == chan)
+  end
+
+  defp hook_applicable_to_receiver?(hook, receiver, user_nickname) do
+    hook.kind != :privmsg or (not hook.direct) or (receiver == user_nickname)
+  end
+
+  defp response_chan_for_hook(hook, chan, sender, user_nickname) do
+    case {resolve_response_channel(chan, user_nickname, sender), hook.public_only} do
+      {{:private, _}, true} -> nil
+      {chan, _} -> chan
     end
   end
 
@@ -313,7 +359,7 @@ defmodule Chatty.HookManager do
 
   defp max_hook_timeout(hooks) do
     hooks
-    |> Enum.map(fn {_, %Hook{task_timeout: timeout}} -> timeout end)
+    |> Enum.map(fn %Hook{task_timeout: timeout} -> timeout end)
     |> Enum.max
   end
 end

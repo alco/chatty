@@ -86,8 +86,8 @@ defmodule Chatty.Connection do
     Logger.debug(["TCP message: ", msg])
 
     case translate_msg(msg) do
-      # TODO: we probably shouldn't ignore unknown messages like this
-      nil ->
+      {:error, :unsupported} ->
+        Logger.debug(["Ignoring unsupported message: ", msg])
         nil
       :ping ->
         irc_cmd(sock, "PONG", user_info.nickname)

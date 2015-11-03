@@ -58,7 +58,7 @@ defmodule Chatty.IRCHelpers do
         {:part, chan, sender}
       other ->
         Logger.warn(["Unhandled IRC message: ", inspect(other)])
-        nil
+        {:error, :unsupported}
     end
   end
 

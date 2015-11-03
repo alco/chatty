@@ -1,8 +1,9 @@
 defmodule Chatty.Env do
+  @moduledoc """
+  A convenience module that wraps env-related functions from `Application`.
+  """
+
   def get(key, default) do
-    case Application.fetch_env(:chatty, key) do
-      {:ok, value} -> value
-      :error -> default
-    end
+    Application.get_env(:chatty, key, default)
   end
 end

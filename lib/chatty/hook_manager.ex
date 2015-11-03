@@ -9,6 +9,8 @@ defmodule Chatty.HookManager do
 
   import Chatty.IRCHelpers, only: [irc_cmd: 3]
 
+  @default_task_timeout 2000
+
   def start_link(user_info) do
     GenServer.start_link(__MODULE__, [user_info], name: __MODULE__)
   end
@@ -59,7 +61,9 @@ defmodule Chatty.HookManager do
   end
 
   def handle_call({:add_hook, id, f, options}, _from, state) do
-    hook = %Hook{id: id, fn: f}
+    hook = %Hook{
+      id: id, fn: f, task_timeout: Chatty.Env.get(:hook_task_timeout, @default_task_timeout)
+    }
     {response, updated_state} = case apply_hook_options(hook, options) do
       {:ok, hook} ->
         case HookAgent.put_hook(id, hook) do

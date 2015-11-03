@@ -5,6 +5,8 @@ config :chatty, [
   port: 6667,
   nickname: "testbotunique",
   channels: ["test-secret-channel"],
+
+  hook_task_timeout: 2000,
 ]
 
 # Use a custom format with a single line break at the end

@@ -4,7 +4,7 @@ defmodule Chatty.IRCHelpers do
   require Logger
 
   def irc_cmd(sock, cmd, rest) do
-    Logger.info("Executing command #{cmd} with args #{inspect rest}")
+    Logger.info(["Executing command #{cmd} with args ", inspect(rest)])
     :ok = :gen_tcp.send(sock, [cmd, " ", rest, "\r\n"])
     sock
   end
@@ -31,7 +31,7 @@ defmodule Chatty.IRCHelpers do
       case Regex.run(~r"^([^! ]+)(?:$|!)", List.to_string(prefix)) do
         [_, sender] -> sender
         other ->
-          Logger.info("bad sender: #{inspect prefix} #{inspect other}")
+          Logger.info(["bad sender: ", inspect(prefix), " ", inspect(other)])
           nil
       end
     end
@@ -56,8 +56,8 @@ defmodule Chatty.IRCHelpers do
       'PART' ->
         [chan | _] = args
         {:part, chan, sender}
-      rest = _ -> 
-        Logger.warn("Intercepted this unhandled message: #{inspect(rest)}")
+      other ->
+        Logger.warn(["Unhandled IRC message: ", inspect(other)])
         nil
     end
   end

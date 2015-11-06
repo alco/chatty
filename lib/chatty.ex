@@ -114,6 +114,7 @@ defmodule Chatty do
   @spec add_topic_hook(atom, ((String.t, String.t, String.t) -> response), Dict.t)
         :: :ok | {:error, term}
   def add_topic_hook(id, f, opts \\ []) do
+    # FIXME: implement different option parsing for :topic hooks
     Chatty.HookManager.add_hook(:topic, id, f, opts)
   end
 
@@ -147,6 +148,7 @@ defmodule Chatty do
   @spec add_presence_hook(atom, ((:join | :part, String.t, String.t) -> response), Dict.t)
         :: :ok | {:error, term}
   def add_presence_hook(id, f, opts \\ []) do
+    # FIXME: implement different option parsing for :presence hooks
     Chatty.HookManager.add_hook(:presence, id, f, opts)
   end
 

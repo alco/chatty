@@ -4,7 +4,7 @@ defmodule Chatty.Hooks.PingHook do
   ]
   @num_replies Enum.count(@replies)
 
-  def run(_sender, text) do
+  def run(text, _sender, _chan) do
     case String.downcase(text) do
       "ping" ->
         {:reply, Enum.at(@replies, :random.uniform(@num_replies)-1)}

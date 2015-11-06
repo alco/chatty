@@ -135,7 +135,7 @@ defmodule Chatty.HookManager do
     |> Enum.filter(fn %Hook{kind: hook_kind} -> hook_kind == applicable_hook_kind end)
   end
 
-  defp hooks_to_tasks(:privmsg, [chan, sender, message], hooks, user_info) do
+  defp hooks_to_tasks(:privmsg, [message, sender, chan], hooks, user_info) do
     receiver = get_message_receiver(message)
     hooks
     |> Enum.filter(&hook_applicable_on_chan?(&1, chan))
@@ -143,19 +143,19 @@ defmodule Chatty.HookManager do
     |> Enum.map(&{&1, response_chan_for_hook(&1, chan, sender, user_info.nickname)})
     |> Enum.reject(fn {_hook, response_chan} -> is_nil(response_chan) end)
     |> Enum.map(fn {hook, response_chan} ->
-      args = build_privmsg_args(hook, message, sender, receiver)
+      args = build_privmsg_args(hook, message, sender, receiver, chan)
       hook_to_task(hook, response_chan, sender, args)
     end)
   end
 
-  defp hooks_to_tasks(action, [chan, sender], hooks, user_info) when action in [:join, :part] do
+  defp hooks_to_tasks(event, [sender, chan], hooks, user_info) when event in [:join, :part] do
     response_chan = resolve_response_channel(chan, user_info.nickname, sender)
     hooks
     |> Enum.filter(&hook_applicable_on_chan?(&1, chan))
-    |> Enum.map(&hook_to_task(&1, response_chan, sender, [chan, action, sender]))
+    |> Enum.map(&hook_to_task(&1, response_chan, sender, [event, sender, chan]))
   end
 
-  defp hooks_to_tasks(:topic_change, [chan, sender, _topic] = args, hooks, user_info) do
+  defp hooks_to_tasks(:topic_change, [_topic, sender, chan] = args, hooks, user_info) do
     # TODO: extract chan and sender to be common for all hook types
     response_chan = resolve_response_channel(chan, user_info.nickname, sender)
     hooks
@@ -171,13 +171,13 @@ defmodule Chatty.HookManager do
     |> send_responses(sock)
   end
 
-  defp build_privmsg_args(hook, message, sender, receiver) do
+  defp build_privmsg_args(hook, message, sender, receiver, chan) do
     message_sans_receiver = strip_message_receiver(hook.direct, message, receiver)
     input = case hook.type do
       :text -> message_sans_receiver
       :token -> tokenize(message_sans_receiver)
     end
-    [sender, input]
+    [input, sender, chan]
   end
 
   defp hook_to_task(hook, response_chan, sender, args) do

@@ -93,9 +93,9 @@ defmodule Chatty.Connection do
       :ping ->
         irc_cmd(sock, "PONG", user_info.nickname)
         state
-      {:channel_topic, [chan, topic]} ->
+      {:channel_topic, [topic, chan]} ->
         Map.update!(state, :channel_topics, &Map.put(&1, chan, topic))
-      {:topic_change, [chan, _sender, topic]} = message ->
+      {:topic_change, [topic, _sender, chan]} = message ->
         Map.update!(state, :channel_topics, &Map.put(&1, chan, topic))
         GenEvent.notify(Chatty.IRCEventManager, {message, sock})
         state

@@ -1,13 +1,9 @@
 defmodule Chatty do
-  use Application
+  @moduledoc """
+  This module defines the public API for interacting with the IRC connection and the hook mechanism.
+  """
 
   alias Chatty.Connection
-
-  def start(_type, _args) do
-    Chatty.Supervisor.start_link
-  end
-
-  ###
 
   @doc """
   Add a hook on the currently open connection.

@@ -12,7 +12,7 @@ defmodule Chatty.Mixfile do
   def application do
     [
       applications: [:logger, :inets, :crypto, :ssl],
-      mod: {Chatty, []},
+      mod: {Chatty.Application, []},
     ]
   end
 

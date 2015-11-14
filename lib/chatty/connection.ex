@@ -131,6 +131,7 @@ defmodule Chatty.Connection do
     {:noreply, %{updated_state | last_message_time: current_time()}}
   end
 
+  ## TCP
   def handle_info({:tcp_closed, sock}, %{sock: sock} = state) do
     Logger.warn("TCP socket closed.")
     reconnect_after(@sleep_sec)
@@ -140,6 +141,13 @@ defmodule Chatty.Connection do
   def handle_info({:tcp_error, sock, reason}, %{sock: sock} = state) do
     Logger.error("TCP socket error: #{inspect reason}.")
     :gen_tcp.close(sock)
+    reconnect_after(@sleep_sec)
+    {:noreply, %{state | sock: nil, last_message_time: nil}}
+  end
+
+  ## SSL
+  def handle_info({:ssl_closed, data, sock}, %{sock: sock} = state) do
+    Logger.warn("SSL socket closed.")
     reconnect_after(@sleep_sec)
     {:noreply, %{state | sock: nil, last_message_time: nil}}
   end

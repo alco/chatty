@@ -9,7 +9,7 @@ defmodule Chatty.Connection do
   @sleep_sec 10
   @ping_sec 5 * 60
   @max_attempts 30
-  @ssl true
+  @ssl Application.get_env(:chatty, :ssl)
 
   def start_link(user_info) do
     GenServer.start_link(__MODULE__, [user_info], name: __MODULE__)
@@ -154,6 +154,7 @@ defmodule Chatty.Connection do
   ###
 
   defp connect(%UserInfo{host: host, port: port}) do
+<<<<<<< HEAD
     if @ssl do
       {:ok, socket} = :ssl.connect(host, port, packet: :line, active: true)
       :ssl.ssl_accept(socket)

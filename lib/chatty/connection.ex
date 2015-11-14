@@ -146,7 +146,7 @@ defmodule Chatty.Connection do
   end
 
   ## SSL
-  def handle_info({:ssl_closed, data, sock}, %{sock: sock} = state) do
+  def handle_info({:ssl_closed, _}, state) do
     Logger.warn("SSL socket closed.")
     reconnect_after(@sleep_sec)
     {:noreply, %{state | sock: nil, last_message_time: nil}}

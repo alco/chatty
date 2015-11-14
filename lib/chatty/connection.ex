@@ -109,7 +109,7 @@ defmodule Chatty.Connection do
 
   def handle_info({:ssl, sock, raw_msg}, %{sock: sock, user_info: user_info} = state) do
     msg = IO.iodata_to_binary(raw_msg) |> String.strip
-    Logger.debug(["SSL TCP message: ", msg])
+    Logger.debug(["TCP message: ", msg])
 
     updated_state = case translate_msg(msg) do
       {:error, :unsupported} ->

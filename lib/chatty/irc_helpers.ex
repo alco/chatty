@@ -1,11 +1,17 @@
 defmodule Chatty.IRCHelpers do
   @moduledoc false
+  @ssl true #Application.get_env(:chatty, :ssl)
 
   require Logger
 
   def irc_cmd(sock, cmd, rest) do
     Logger.info(["Executing command #{cmd} with args ", inspect(rest)])
-    :ok = :gen_tcp.send(sock, [cmd, " ", rest, "\r\n"])
+    case @ssl do
+      true ->
+        :ok = :ssl.send(sock, [cmd, " ", rest, "\r\n"])
+      false ->
+        :ok = :gen_tcp.send(sock, [cmd, " ", rest, "\r\n"])
+    end
     sock
   end
 

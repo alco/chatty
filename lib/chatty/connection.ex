@@ -9,6 +9,7 @@ defmodule Chatty.Connection do
   @sleep_sec 10
   @ping_sec 5 * 60
   @max_attempts 30
+  @ssl true
 
   def start_link(user_info) do
     GenServer.start_link(__MODULE__, [user_info], name: __MODULE__)
@@ -122,7 +123,14 @@ defmodule Chatty.Connection do
   ###
 
   defp connect(%UserInfo{host: host, port: port}) do
-    :gen_tcp.connect(host, port, packet: :line, active: true)
+    case @ssl? do
+    false ->
+      :gen_tcp.connect(host, port, packet: :line, active: true)
+    true ->
+      opts = [{ :versions, [:"tlsv1", :"tlsv1.1", :"tlsv1.2"] }]
+      {:ok, sock} = :gen_tcp.connect(host, port, packet: :line, active: true)
+      :ssl.connect(sock, opts)
+    end
   end
 
   defp irc_handshake(sock, %UserInfo{nickname: nickname, password: password, channels: channels}) do

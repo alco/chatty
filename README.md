@@ -24,9 +24,12 @@ end
 You need to set the following environment parameters for the `:chatty` app:
 
   * `:nickname` – the nick to use when connecting and identifying with NickServ
-  * `:channels` – a list of channel names to join upon connect
+  * `:channels` – a list of channel names (in strings) to join upon connect
   * `:password` (optional) – when set, Chatty will identify with NickServ using
     this password
+  * `:host` - A string with the address of the IRC network you want to connect to. 
+  * `:port` - The IRC port Chatty will use. Check the server's configuration for its SSL port (or ask its admins).
+  * `:ssl` (optional) - set to `true` or `false`. Chatty will rely on what you said to enable SSL mechanisms during network operations.
 
 Chatty's behaviour is customized by means of adding hooks that get invoked on
 each incoming message. A ping hook is included as an example. Set it up as

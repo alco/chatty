@@ -1,6 +1,6 @@
 defmodule Chatty.IRCHelpers do
   @moduledoc false
-  @ssl true #Application.get_env(:chatty, :ssl)
+  @ssl Application.get_env(:chatty, :ssl)
 
   require Logger
 
@@ -9,7 +9,7 @@ defmodule Chatty.IRCHelpers do
     case @ssl do
       true ->
         :ok = :ssl.send(sock, [cmd, " ", rest, "\r\n"])
-      false ->
+      _ ->
         :ok = :gen_tcp.send(sock, [cmd, " ", rest, "\r\n"])
     end
     sock

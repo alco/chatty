@@ -1,16 +1,15 @@
 defmodule Chatty.IRCHelpers do
   @moduledoc false
-  @ssl Application.get_env(:chatty, :ssl)
+  @ssl Application.get_env(:chatty, :ssl, false)
 
   require Logger
 
   def irc_cmd(sock, cmd, rest) do
     Logger.info(["Executing command #{cmd} with args ", inspect(rest)])
-    case @ssl do
-      true ->
-        :ok = :ssl.send(sock, [cmd, " ", rest, "\r\n"])
-      _ ->
-        :ok = :gen_tcp.send(sock, [cmd, " ", rest, "\r\n"])
+    if @ssl do
+      :ok = :ssl.send(sock, [cmd, " ", rest, "\r\n"])
+    else
+      :ok = :gen_tcp.send(sock, [cmd, " ", rest, "\r\n"])
     end
     sock
   end
@@ -28,6 +27,10 @@ defmodule Chatty.IRCHelpers do
       irc_cmd(sock, "JOIN", [?#, chan])
     end)
     sock
+  end
+
+  def irc_close do
+
   end
 
   def translate_msg(msg) do

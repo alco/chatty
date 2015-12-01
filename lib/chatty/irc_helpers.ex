@@ -39,23 +39,23 @@ defmodule Chatty.IRCHelpers do
     case command do
       'PRIVMSG' ->
         [chan, msg] = args
-        {:privmsg, chan, sender, msg}
+        {:privmsg, [msg, sender, chan]}
       '332' ->
         # Initial topic message that we get upon joining a channel
         [_, chan, topic] = args
-        {:topic, chan, topic}
+        {:channel_topic, [topic, chan]}
       'TOPIC' ->
         # A topic change while we're inside a channel
         [chan, topic] = args
-        {:topic, chan, topic}
+        {:topic_change, [topic, sender, chan]}
       'PING' ->
         :ping
       'JOIN' ->
         [chan | _] = args
-        {:join, chan, sender}
+        {:join, [sender, chan]}
       'PART' ->
         [chan | _] = args
-        {:part, chan, sender}
+        {:part, [sender, chan]}
       other ->
         Logger.warn(["Unhandled IRC message: ", inspect(other)])
         {:error, :unsupported}

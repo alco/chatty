@@ -50,9 +50,11 @@ defmodule Chatty.HookManager do
   do
     Logger.debug(["HookManager: Handling ", inspect(message)])
     hooks_to_invoke = filter_applicable_hooks(hooks, message_kind)
-    max_hook_timeout = max_hook_timeout(hooks_to_invoke)
-    hooks_to_tasks(message_kind, message_args, hooks_to_invoke, user_info)
-    |> process_tasks(max_hook_timeout, sock)
+    if hooks_to_invoke != [] do
+      max_hook_timeout = max_hook_timeout(hooks_to_invoke)
+      hooks_to_tasks(message_kind, message_args, hooks_to_invoke, user_info)
+      |> process_tasks(max_hook_timeout, sock)
+    end
     {:noreply, state}
   end
 

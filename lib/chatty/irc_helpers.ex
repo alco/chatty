@@ -30,27 +30,27 @@ defmodule Chatty.IRCHelpers do
   end
 
   # Here we could send user informations when the 001 numeric code is receiveed.
-  def process_raw_msg(msg) do
+  def process_raw_msg(msg, state) do
     case translate_msg(msg) do
       {:error, :unsupported} ->
         Logger.debug(["Ignoring unsupported message: ", msg])
         state
       :ping ->
-        irc_cmd(sock, "PONG", user_info.nickname)
+        irc_cmd(state.sock, "PONG", state.user_info.nickname)
         state
       {:channel_topic, [topic, chan]} ->
         Map.update!(state, :channel_topics, &Map.put(&1, chan, topic))
       {:topic_change, [topic, _sender, chan]} = message ->
         Map.update!(state, :channel_topics, &Map.put(&1, chan, topic))
-        GenEvent.notify(Chatty.IRCEventManager, {message, sock})
+        GenEvent.notify(Chatty.IRCEventManager, {message, state.sock})
         state
       message ->
-        GenEvent.notify(Chatty.IRCEventManager, {message, sock})
+        GenEvent.notify(Chatty.IRCEventManager, {message, state.sock})
         state
     end
   end
 
-  @spec irc_close(atom, socket) :: :ok
+  @spec irc_close(pid) :: :ok
   def irc_close(socket) do
     if @ssl do
       :ssl.close(socket)
@@ -91,6 +91,8 @@ defmodule Chatty.IRCHelpers do
       'PART' ->
         [chan | _] = args
         {:part, [sender, chan]}
+      #'001' ->
+        #  irc_handshake… <= Must wait for that!!!
       other ->
         Logger.warn(["Unhandled IRC message: ", inspect(other)])
         {:error, :unsupported}

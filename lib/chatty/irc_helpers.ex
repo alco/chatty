@@ -29,8 +29,34 @@ defmodule Chatty.IRCHelpers do
     sock
   end
 
-  def irc_close do
+  # Here we could send user informations when the 001 numeric code is receiveed.
+  def process_raw_msg(msg) do
+    case translate_msg(msg) do
+      {:error, :unsupported} ->
+        Logger.debug(["Ignoring unsupported message: ", msg])
+        state
+      :ping ->
+        irc_cmd(sock, "PONG", user_info.nickname)
+        state
+      {:channel_topic, [topic, chan]} ->
+        Map.update!(state, :channel_topics, &Map.put(&1, chan, topic))
+      {:topic_change, [topic, _sender, chan]} = message ->
+        Map.update!(state, :channel_topics, &Map.put(&1, chan, topic))
+        GenEvent.notify(Chatty.IRCEventManager, {message, sock})
+        state
+      message ->
+        GenEvent.notify(Chatty.IRCEventManager, {message, sock})
+        state
+    end
+  end
 
+  @spec irc_close(atom, socket) :: :ok
+  def irc_close(socket) do
+    if @ssl do
+      :ssl.close(socket)
+    else
+      :gen_tcp.close(socket)
+    end
   end
 
   def translate_msg(msg) do

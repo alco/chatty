@@ -86,14 +86,14 @@ defmodule Chatty.Connection do
   def handle_info({:tcp, sock, raw_msg}, %{sock: sock, user_info: user_info} = state) do
     msg = IO.iodata_to_binary(raw_msg) |> String.strip
     Logger.debug(["TCP message: ", msg])
-    updated_state = process_raw_msg(msg)
+    updated_state = process_raw_msg(msg, state)
     {:noreply, %{updated_state | last_message_time: current_time()}}
   end
 
   def handle_info({:ssl, sock, raw_msg}, %{sock: sock, user_info: user_info} = state) do
     msg = IO.iodata_to_binary(raw_msg) |> String.strip
     Logger.debug(["TCP message: ", msg])
-    updated_state = process_raw_msg(msg)
+    updated_state = process_raw_msg(msg, state)
     {:noreply, %{updated_state | last_message_time: current_time()}}
   end
 

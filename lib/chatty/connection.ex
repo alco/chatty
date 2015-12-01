@@ -122,6 +122,7 @@ defmodule Chatty.Connection do
   ###
 
   defp connect(%UserInfo{host: host, port: port}) do
+    Logger.info("Connecting to #{host}:#{port}...")
     :gen_tcp.connect(host, port, packet: :line, active: true)
   end
 

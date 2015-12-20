@@ -129,10 +129,10 @@ defmodule Chatty.Connection do
 
   defp connect(%UserInfo{host: host, port: port}) do
     if @ssl do
+      Logger.debug("Performing SSL connection with #{host}")
       {:ok, socket} = :ssl.connect(host, port, packet: :line, active: true)
-      :ssl.ssl_accept(socket)
-      {:ok, socket}
     else
+      Logger.debug("Performing insecure connection with #{host}")
       :gen_tcp.connect(host, port, packet: :line, active: true)
     end
   end

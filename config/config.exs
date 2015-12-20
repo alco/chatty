@@ -2,9 +2,10 @@ use Mix.Config
 
 config :chatty, [
   host: "irc.freenode.net",
-  port: 6667,
-  nickname: "testbotunique",
-  channels: ["test-secret-channel"],
+  port: 6697,
+  ssl: true,
+  nickname: "Chatty-ssl",
+  channels: ["Queerdev"],
   hook_task_timeout: 2000,
 ]
 

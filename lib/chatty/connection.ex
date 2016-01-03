@@ -9,6 +9,7 @@ defmodule Chatty.Connection do
   @sleep_sec 10
   @ping_sec 5 * 60
   @max_attempts 30
+  @ssl Application.get_env(:chatty, :ssl, false)
 
   def start_link(user_info) do
     GenServer.start_link(__MODULE__, [user_info], name: __MODULE__)
@@ -71,7 +72,7 @@ defmodule Chatty.Connection do
   def handle_info(:check_idle_time, %{sock: sock, last_message_time: time} = state) do
     updated_state = if time_diff(time) >= @ping_sec do
       # Something may have gone awry. Try reconnecting.
-      :gen_tcp.close(sock)
+      irc_close(sock)
       send(self(), :connect)
       %{state | sock: nil, last_message_time: nil}
     else
@@ -85,27 +86,18 @@ defmodule Chatty.Connection do
   def handle_info({:tcp, sock, raw_msg}, %{sock: sock, user_info: user_info} = state) do
     msg = IO.iodata_to_binary(raw_msg) |> String.strip
     Logger.debug(["TCP message: ", msg])
-
-    updated_state = case translate_msg(msg) do
-      {:error, :unsupported} ->
-        Logger.debug(["Ignoring unsupported message: ", msg])
-        state
-      :ping ->
-        irc_cmd(sock, "PONG", user_info.nickname)
-        state
-      {:channel_topic, [topic, chan]} ->
-        Map.update!(state, :channel_topics, &Map.put(&1, chan, topic))
-      {:topic_change, [topic, _sender, chan]} = message ->
-        Map.update!(state, :channel_topics, &Map.put(&1, chan, topic))
-        GenEvent.notify(Chatty.IRCEventManager, {message, sock})
-        state
-      message ->
-        GenEvent.notify(Chatty.IRCEventManager, {message, sock})
-        state
-    end
+    updated_state = process_raw_msg(msg, state)
     {:noreply, %{updated_state | last_message_time: current_time()}}
   end
 
+  def handle_info({:ssl, sock, raw_msg}, %{sock: sock, user_info: user_info} = state) do
+    msg = IO.iodata_to_binary(raw_msg) |> String.strip
+    Logger.debug(["TCP message: ", msg])
+    updated_state = process_raw_msg(msg, state)
+    {:noreply, %{updated_state | last_message_time: current_time()}}
+  end
+
+  ## TCP
   def handle_info({:tcp_closed, sock}, %{sock: sock} = state) do
     Logger.warn("TCP socket closed.")
     reconnect_after(@sleep_sec)
@@ -114,7 +106,21 @@ defmodule Chatty.Connection do
 
   def handle_info({:tcp_error, sock, reason}, %{sock: sock} = state) do
     Logger.error("TCP socket error: #{inspect reason}.")
-    :gen_tcp.close(sock)
+    irc_close(sock)
+    reconnect_after(@sleep_sec)
+    {:noreply, %{state | sock: nil, last_message_time: nil}}
+  end
+
+  ## SSL
+  def handle_info({:ssl_closed, _}, state) do
+    Logger.warn("SSL socket closed.")
+    reconnect_after(@sleep_sec)
+    {:noreply, %{state | sock: nil, last_message_time: nil}}
+  end
+
+  def handle_info({:ssl_error, sock, reason}, %{sock: sock} = state) do
+    Logger.debug("SSL socket error: #{reason}")
+    irc_close(sock)
     reconnect_after(@sleep_sec)
     {:noreply, %{state | sock: nil, last_message_time: nil}}
   end
@@ -122,8 +128,13 @@ defmodule Chatty.Connection do
   ###
 
   defp connect(%UserInfo{host: host, port: port}) do
-    Logger.info("Connecting to #{host}:#{port}...")
-    :gen_tcp.connect(host, port, packet: :line, active: true)
+    if @ssl do
+      Logger.debug("Performing SSL connection with #{host}")
+      {:ok, socket} = :ssl.connect(host, port, packet: :line, active: true)
+    else
+      Logger.debug("Performing insecure connection with #{host}")
+      :gen_tcp.connect(host, port, packet: :line, active: true)
+    end
   end
 
   defp irc_handshake(sock, %UserInfo{nickname: nickname, password: password, channels: channels}) do

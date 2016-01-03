@@ -1,11 +1,16 @@
 defmodule Chatty.IRCHelpers do
   @moduledoc false
+  @ssl Application.get_env(:chatty, :ssl, false)
 
   require Logger
 
   def irc_cmd(sock, cmd, rest) do
     Logger.info(["Executing command #{cmd} with args ", inspect(rest)])
-    :ok = :gen_tcp.send(sock, [cmd, " ", rest, "\r\n"])
+    if @ssl do
+      :ok = :ssl.send(sock, [cmd, " ", rest, "\r\n"])
+    else
+      :ok = :gen_tcp.send(sock, [cmd, " ", rest, "\r\n"])
+    end
     sock
   end
 
@@ -22,6 +27,36 @@ defmodule Chatty.IRCHelpers do
       irc_cmd(sock, "JOIN", [?#, chan])
     end)
     sock
+  end
+
+  # Here we could send user informations when the 001 numeric code is receiveed.
+  def process_raw_msg(msg, state) do
+    case translate_msg(msg) do
+      {:error, :unsupported} ->
+        Logger.debug(["Ignoring unsupported message: ", msg])
+        state
+      :ping ->
+        irc_cmd(state.sock, "PONG", state.user_info.nickname)
+        state
+      {:channel_topic, [topic, chan]} ->
+        Map.update!(state, :channel_topics, &Map.put(&1, chan, topic))
+      {:topic_change, [topic, _sender, chan]} = message ->
+        Map.update!(state, :channel_topics, &Map.put(&1, chan, topic))
+        GenEvent.notify(Chatty.IRCEventManager, {message, state.sock})
+        state
+      message ->
+        GenEvent.notify(Chatty.IRCEventManager, {message, state.sock})
+        state
+    end
+  end
+
+  @spec irc_close(pid) :: :ok
+  def irc_close(socket) do
+    if @ssl do
+      :ssl.close(socket)
+    else
+      :gen_tcp.close(socket)
+    end
   end
 
   def translate_msg(msg) do
@@ -56,6 +91,8 @@ defmodule Chatty.IRCHelpers do
       'PART' ->
         [chan | _] = args
         {:part, [sender, chan]}
+      #'001' ->
+        #  irc_handshake… <= Must wait for that!!!
       other ->
         Logger.warn(["Unhandled IRC message: ", inspect(other)])
         {:error, :unsupported}

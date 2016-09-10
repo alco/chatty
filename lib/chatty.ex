@@ -162,12 +162,11 @@ defmodule Chatty do
 
   @spec send_message(String.t, String.t) :: :ok
   def send_message(chan, msg) do
-    Connection.send_message(Chatty.Connection, chan, msg)
+    Connection.send_message(chan, msg)
   end
 
   def init_hooks() do
     add_privmsg_hook :ping, &Chatty.Hooks.PingHook.run/3, direct: true
-    add_privmsg_hook :rude, &Chatty.Hooks.RudeReplyHook.run/3, direct: true, exclusive: true
     add_topic_hook :topic, &Chatty.Hooks.TopicHook.run/3
     add_presence_hook :presence, &Chatty.Hooks.PresenceHook.run/3
   end

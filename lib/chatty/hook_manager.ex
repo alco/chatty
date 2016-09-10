@@ -104,24 +104,22 @@ defmodule Chatty.HookManager do
 
   defp apply_hook_options(hook, options) do
     {hook, bad_options} = Enum.reduce(options, {hook, []}, fn option, {hook, bad_options} ->
-      hook = case option do
+      case option do
         {:in, type} when is_atom(type) ->
-          %Hook{hook | type: type}
+          {%Hook{hook | type: type}, bad_options}
         {:channel, chan} when is_binary(chan) ->
-          %Hook{hook | chan: chan}
+          {%Hook{hook | chan: chan}, bad_options}
         {:direct, flag} when is_boolean(flag) ->
-          %Hook{hook | direct: flag}
+          {%Hook{hook | direct: flag}, bad_options}
         {:exclusive, flag} when is_boolean(flag) ->
-          %Hook{hook | exclusive: flag}
+          {%Hook{hook | exclusive: flag}, bad_options}
         {:public_only, flag} when is_boolean(flag) ->
-          %Hook{hook | public_only: flag}
+          {%Hook{hook | public_only: flag}, bad_options}
         {:task_timeout, timeout} when is_integer(timeout) and timeout > 0 ->
-          %Hook{hook | task_timeout: timeout}
+          {%Hook{hook | task_timeout: timeout}, bad_options}
         _ ->
-          bad_options = [option | bad_options]
-          hook
+          {hook, [option | bad_options]}
       end
-      {hook, bad_options}
     end)
     if bad_options == [] do
       {:ok, hook}
@@ -187,7 +185,6 @@ defmodule Chatty.HookManager do
     parent = self()
     ref = make_ref()
     {:ok, task} = Task.Supervisor.start_child(HookTaskSupervisor, fn ->
-      :random.seed(:erlang.monotonic_time)
       result = resolve_hook_result(apply(hook.fn, args), response_chan, sender)
       send(parent, {:hook_task_result, ref, result})
     end)
